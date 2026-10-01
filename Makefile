@@ -15,7 +15,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 
 CC          ?= gcc
 # Probe stack protector flags for backward compatibility (GCC < 4.9 like CentOS 6 GCC 4.4 supports -fstack-protector but not -fstack-protector-strong)
-STACK_PROT  := $(shell printf '%s\n' 'int main(void){return 0;}' | $(CC) -fstack-protector-strong -x c - -o /dev/null >/dev/null 2>&1 && echo "-fstack-protector-strong" || (printf '%s\n' 'int main(void){return 0;}' | $(CC) -fstack-protector -x c - -o /dev/null >/dev/null 2>&1 && echo "-fstack-protector" || echo ""))
+STACK_PROT  := $(shell if $(CC) -fstack-protector-strong -x c /dev/null -E >/dev/null 2>&1; then echo "-fstack-protector-strong"; elif $(CC) -fstack-protector -x c /dev/null -E >/dev/null 2>&1; then echo "-fstack-protector"; fi)
 CFLAGS      ?= -std=gnu99 -DLINUX -O2 -Wall -Wextra -D_GNU_SOURCE -I. $(STACK_PROT)
 LDFLAGS     ?=
 
@@ -26,10 +26,11 @@ LDFLAGS     ?=
 OPENSSL_MIN_VER := 1.1.1
 OPENSSL_MIN_HEX := 0x10101000L
 
-HAVE_OPENSSL_HDR := $(shell printf '%s\n' '#include <openssl/opensslv.h>' | $(CC) $(CFLAGS) -E - >/dev/null 2>&1 && echo 1 || echo 0)
+# Probes avoid raw '#' characters or subshells to ensure strict compatibility with GNU Make 3.81 (CentOS 6)
+HAVE_OPENSSL_HDR := $(shell echo 'int main(void){return 0;}' | $(CC) $(CFLAGS) -include openssl/opensslv.h -E -x c - >/dev/null 2>&1 && echo 1 || echo 0)
 HAVE_OPENSSL_LIB := $(shell echo 'int main(void){return 0;}' | $(CC) -x c - -lcrypto -o /dev/null >/dev/null 2>&1 && echo 1 || echo 0)
-OPENSSL_VER_OK   := $(shell printf '%s\n' '#include <openssl/opensslv.h>' '#if defined(OPENSSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= $(OPENSSL_MIN_HEX))' 'int main(void){return 0;}' '#else' '#error "System OpenSSL is older than package baseline"' '#endif' | $(CC) $(CFLAGS) -x c - -o /dev/null -lcrypto >/dev/null 2>&1 && echo 1 || echo 0)
-OPENSSL_VER_TEXT := $(shell printf '%s\n' '#include <openssl/opensslv.h>' | $(CC) $(CFLAGS) -E -dM -x c - 2>/dev/null | grep -m1 "OPENSSL_VERSION_TEXT" | cut -d'"' -f2)
+OPENSSL_VER_OK   := $(shell echo 'int main(void){int c[OPENSSL_VERSION_NUMBER >= $(OPENSSL_MIN_HEX) ? 1 : -1];(void)c;return 0;}' | $(CC) $(CFLAGS) -include openssl/opensslv.h -x c - -o /dev/null -lcrypto >/dev/null 2>&1 && echo 1 || echo 0)
+OPENSSL_VER_TEXT := $(shell echo '' | $(CC) $(CFLAGS) -include openssl/opensslv.h -E -dM -x c - 2>/dev/null | grep -m1 "OPENSSL_VERSION_TEXT" | cut -d'"' -f2)
 
 USE_SYSTEM_CRYPTO ?= auto
 
