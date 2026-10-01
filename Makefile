@@ -14,7 +14,9 @@ SYSCONFDIR  ?= /etc/backupd-tyl
 SYSTEMDDIR  ?= /etc/systemd/system
 
 CC          ?= gcc
-CFLAGS      ?= -std=gnu99 -DLINUX -O2 -Wall -Wextra -D_GNU_SOURCE -I. -fstack-protector-strong
+# Probe stack protector flags for backward compatibility (GCC < 4.9 like CentOS 6 GCC 4.4 supports -fstack-protector but not -fstack-protector-strong)
+STACK_PROT  := $(shell printf '%s\n' 'int main(void){return 0;}' | $(CC) -fstack-protector-strong -x c - -o /dev/null >/dev/null 2>&1 && echo "-fstack-protector-strong" || (printf '%s\n' 'int main(void){return 0;}' | $(CC) -fstack-protector -x c - -o /dev/null >/dev/null 2>&1 && echo "-fstack-protector" || echo ""))
+CFLAGS      ?= -std=gnu99 -DLINUX -O2 -Wall -Wextra -D_GNU_SOURCE -I. $(STACK_PROT)
 LDFLAGS     ?=
 
 # Baseline requirement for external system OpenSSL library:
@@ -72,9 +74,18 @@ COMMON_OBJS = util.o
 SERVER_OBJS = backupd.o check.o client.o config.o error.o extcmd.o global.o sig.o $(COMMON_OBJS) $(CRYPTO_OBJS)
 CLIENT_OBJS = backupc.o $(COMMON_OBJS) $(CRYPTO_OBJS)
 
-.PHONY: all clean strip install install-systemd test
+.PHONY: all clean strip install install-systemd test static
 
 all: backupd backupc
+
+static:
+	@if command -v musl-gcc >/dev/null 2>&1; then \
+		echo "Building standalone static binaries with musl-gcc..."; \
+		$(MAKE) CC="musl-gcc" CFLAGS="-std=gnu99 -DLINUX -O2 -Wall -Wextra -D_GNU_SOURCE -I. -static" LDFLAGS="-static" USE_SYSTEM_CRYPTO=0 all; \
+	else \
+		echo "Building static binaries with $(CC)..."; \
+		$(MAKE) CFLAGS="$(CFLAGS) -static" LDFLAGS="-static" USE_SYSTEM_CRYPTO=0 all; \
+	fi
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

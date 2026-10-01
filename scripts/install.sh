@@ -50,6 +50,15 @@ INIT_SYS="unknown"
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     DISTRO="$ID"
+elif [ -f /etc/centos-release ]; then
+    DISTRO="centos"
+    PRETTY_NAME=$(cat /etc/centos-release)
+elif [ -f /etc/redhat-release ]; then
+    DISTRO="rhel"
+    PRETTY_NAME=$(cat /etc/redhat-release)
+elif [ -f /etc/debian_version ]; then
+    DISTRO="debian"
+    PRETTY_NAME="Debian $(cat /etc/debian_version)"
 fi
 
 if pidof systemd >/dev/null 2>&1 || [ -d /run/systemd/system ]; then

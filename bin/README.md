@@ -9,8 +9,10 @@ This directory contains standalone, stripped, pre-compiled binaries for **backup
 
 ### Technical Specifications
 
-* **Architecture**: Linux x86_64 (`x86_64-linux-gnu`).
-* **External Dependencies**: **None** (links only against standard C library `libc.so.6`).
+* **Architecture**: Linux x86_64 (`x86_64-linux`).
+* **Binary Type**: 100% Statically linked (`SYSV` ELF, stripped).
+* **External Dependencies**: **ABSOLUTELY NONE** (no glibc version requirements, no `/lib64/ld-linux-x86-64.so.2` dynamic interpreter, no shared libraries).
+* **Linux Kernel Compatibility**: Universal Linux kernel 2.6.32+ up to modern 6.x kernels (compatible with legacy CentOS 6.x / RHEL 6.x, Debian 6+, Ubuntu 10.04+, Alpine, Rocky, Arch, etc.).
 * **Cryptographic Engine**: Local bundled pure-C constant-time implementations of all 6 AEAD ciphers:
   - Ephemeral Curve25519 (X25519) Diffie-Hellman key exchange
   - ASCON-128a (NIST Lightweight Cryptography standard)
@@ -20,10 +22,10 @@ This directory contains standalone, stripped, pre-compiled binaries for **backup
   - AES-256-GCM (NIST SP 800-38D)
   - AES-128-GCM (NIST SP 800-38D)
 * **Footprint**:
-  - `backupc`: ~87 KB
-  - `backupd`: ~108 KB
+  - `backupc`: ~179 KB (zero dependencies, static)
+  - `backupd`: ~228 KB (zero dependencies, static)
 * **Security Hardening**:
-  - Compiled with `-fstack-protector-strong`, format string guards, bounded buffer reads, and timing-safe password verification.
+  - Bounded frame buffers, timing-safe constant-time password verification, memory zeroing, and defense-in-depth privilege drop checks.
 
 ---
 

@@ -277,9 +277,9 @@ The script will:
 6. Install and enable the systemd unit (`backupd-tyl.service`) or SysVinit/OpenRC init script.
 
 ### Pre-compiled Standalone Binaries (`bin/`)
-For target machines without a C compiler (`gcc`), `make`, or external libraries (such as minimal appliances, edge routers, or legacy 2010s servers), pre-compiled, stripped 64-bit ELF binaries are provided in the `bin/` directory:
-* `bin/backupd` (~108 KB): Standalone daemon built with bundled constant-time crypto and zero external dependencies (requires only standard `libc.so.6`).
-* `bin/backupc` (~87 KB): Streaming backup client with zero external dependencies.
+For target machines without a C compiler (`gcc`), `make`, or modern C libraries (such as minimal appliances, edge routers, containers, or legacy 2010s servers like CentOS 6), 100% statically linked, stripped 64-bit ELF binaries are provided in the `bin/` directory:
+* `bin/backupd` (~228 KB): Standalone daemon built with bundled constant-time crypto and statically linked (zero external or glibc dependencies, works on kernel 2.6.32+).
+* `bin/backupc` (~179 KB): Streaming backup client with zero external or glibc dependencies.
 
 To uninstall:
 ```bash
