@@ -672,9 +672,21 @@ static void daemonize (const char* pidfile) {
     if (pid < 0) errexit_code (TYL_EXIT_IO, "second fork failed: %m");
     if (pid > 0) _exit (0);
 
-    /* Write PID file */
+    /* Write PID file with failover between /var/run and /run */
     if (pidfile && pidfile[0] != '\0') {
         FILE* fp = fopen (pidfile, "w");
+        char alt_path[PATH_MAX];
+        alt_path[0] = '\0';
+        if (!fp) {
+            if (strncmp (pidfile, "/run/", 5) == 0) {
+                snprintf (alt_path, sizeof(alt_path), "/var%s", pidfile);
+                fp = fopen (alt_path, "w");
+            } else if (strncmp (pidfile, "/var/run/", 9) == 0) {
+                snprintf (alt_path, sizeof(alt_path), "%s", pidfile + 4);
+                fp = fopen (alt_path, "w");
+            }
+            if (fp) pidfile = alt_path;
+        }
         if (fp) {
             fprintf (fp, "%d\n", getpid ());
             fclose (fp);
@@ -786,9 +798,9 @@ int main (int argc, char* argv[]) {
 
     /* Configure server logging subsystem */
     const CfgGlobal* g = CfgGetGlobal ();
-    const char* log_tgt = override_logtarget ? override_logtarget : (g && g->log_target ? g->log_target : "syslog");
-    const char* log_fil = override_logfile ? override_logfile : (g && g->log_file ? g->log_file : "");
-    int log_lvl = g ? g->log_level : TYL_LOG_INFO;
+    const char* log_tgt = override_logtarget ? override_logtarget : (g && g->log_target ? g->log_target : "file");
+    const char* log_fil = override_logfile ? override_logfile : (g && g->log_file ? g->log_file : "/var/log/backupd-tyl.log");
+    int log_lvl = g ? g->log_level : TYL_LOG_WARN;
     if (override_loglevel) {
         if (strcasecmp (override_loglevel, "debug") == 0) log_lvl = TYL_LOG_DEBUG;
         else if (strcasecmp (override_loglevel, "info") == 0) log_lvl = TYL_LOG_INFO;
@@ -801,7 +813,7 @@ int main (int argc, char* argv[]) {
 
     int port = override_port ? override_port : (g ? g->port : DEFAULTPORT);
     const char* bind_addr = override_bind ? override_bind : (g && g->bind_address ? g->bind_address : "0.0.0.0");
-    const char* pid_file = override_pidfile ? override_pidfile : (g ? g->pid_file : NULL);
+    const char* pid_file = override_pidfile ? override_pidfile : (g && g->pid_file ? g->pid_file : "/var/run/backupd-tyl.pid");
 
     /* Detect inetd mode if stdin is a socket and neither daemon nor foreground was specified */
     if (!opt_daemon && !opt_foreground) {
@@ -823,6 +835,18 @@ int main (int argc, char* argv[]) {
         daemonize (pid_file);
     } else if (opt_foreground && pid_file && pid_file[0] != '\0') {
         FILE* fp = fopen (pid_file, "w");
+        char alt_path[PATH_MAX];
+        alt_path[0] = '\0';
+        if (!fp) {
+            if (strncmp (pid_file, "/run/", 5) == 0) {
+                snprintf (alt_path, sizeof(alt_path), "/var%s", pid_file);
+                fp = fopen (alt_path, "w");
+            } else if (strncmp (pid_file, "/var/run/", 9) == 0) {
+                snprintf (alt_path, sizeof(alt_path), "%s", pid_file + 4);
+                fp = fopen (alt_path, "w");
+            }
+            if (fp) pid_file = alt_path;
+        }
         if (fp) {
             fprintf (fp, "%d\n", getpid ());
             fclose (fp);
@@ -883,9 +907,9 @@ int main (int argc, char* argv[]) {
             tyl_log_notice ("SIGHUP received, reloading configuration from \"%s\"", configname);
             CfgInit ();
             const CfgGlobal* cur_g = CfgGetGlobal ();
-            const char* cur_tgt = override_logtarget ? override_logtarget : (cur_g && cur_g->log_target ? cur_g->log_target : "syslog");
-            const char* cur_fil = override_logfile ? override_logfile : (cur_g && cur_g->log_file ? cur_g->log_file : "");
-            int cur_lvl = cur_g ? cur_g->log_level : TYL_LOG_INFO;
+            const char* cur_tgt = override_logtarget ? override_logtarget : (cur_g && cur_g->log_target ? cur_g->log_target : "file");
+            const char* cur_fil = override_logfile ? override_logfile : (cur_g && cur_g->log_file ? cur_g->log_file : "/var/log/backupd-tyl.log");
+            int cur_lvl = cur_g ? cur_g->log_level : TYL_LOG_WARN;
             if (override_loglevel) {
                 if (strcasecmp (override_loglevel, "debug") == 0) cur_lvl = TYL_LOG_DEBUG;
                 else if (strcasecmp (override_loglevel, "info") == 0) cur_lvl = TYL_LOG_INFO;

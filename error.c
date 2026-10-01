@@ -31,9 +31,9 @@
 #include "error.h"
 #include "util.h"
 
-static char  s_log_target[32]    = "syslog";
-static char  s_log_file[512]     = "";
-static int   s_log_level         = TYL_LOG_INFO;
+static char  s_log_target[32]    = "file";
+static char  s_log_file[512]     = "/var/log/backupd-tyl.log";
+static int   s_log_level         = TYL_LOG_WARN;
 static int   s_log_facility      = LOG_DAEMON;
 static FILE* s_log_fp            = NULL;
 static int   s_syslog_open       = 0;
@@ -272,10 +272,10 @@ void usage (void) {
              "  -d, --daemon            Run in background as standalone daemon\n"
              "  -F, --foreground        Run in foreground (systemd / container mode)\n"
              "  -i, --inetd             Run in inetd / socket activation mode (stdin/stdout)\n"
-             "  -P, --pidfile <file>    Write PID to specified file\n"
-             "  -l, --logfile <file>    Write logs to specified file\n"
-             "  -L, --loglevel <level>  Logging level (debug, info, notice, warn, error)\n"
-             "  -t, --logtarget <dest>  Log target: syslog, file, or stderr (default: syslog)\n"
+             "  -P, --pidfile <file>    Write PID to specified file (default: /var/run/backupd-tyl.pid)\n"
+             "  -l, --logfile <file>    Write logs to specified file (default: /var/log/backupd-tyl.log)\n"
+             "  -L, --loglevel <level>  Logging level: debug, info, notice, warn, error (default: warn)\n"
+             "  -t, --logtarget <dest>  Log target: file, syslog, or stderr (default: file)\n"
              "  -C, --check-config      Validate configuration file syntax and exit\n"
              "  -V, --version           Print version, commissioner, and cryptographic info\n"
              "  -h, --help              Print this help screen\n",
@@ -298,8 +298,8 @@ void connbroken (void) {
 void opensyslog (void) {
     const CfgGlobal* g = CfgGetGlobal ();
     int fac = (g && g->log_facility) ? g->log_facility : LOG_DAEMON;
-    int lvl = (g && g->log_level) ? g->log_level : TYL_LOG_INFO;
-    const char* tgt = (g && g->log_target) ? g->log_target : "syslog";
-    const char* fpath = (g && g->log_file) ? g->log_file : "";
+    int lvl = (g && g->log_level) ? g->log_level : TYL_LOG_WARN;
+    const char* tgt = (g && g->log_target) ? g->log_target : "file";
+    const char* fpath = (g && g->log_file) ? g->log_file : "/var/log/backupd-tyl.log";
     tyl_log_init (tgt, fpath, lvl, fac);
 }

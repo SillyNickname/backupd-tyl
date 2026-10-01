@@ -31,10 +31,10 @@ PidFile = "/var/run/backupd-tyl.pid"
 DefaultCipher = "ascon"
 
 # Logging Destination & Systems:
+# "file"   - Direct append to dedicated log file with timestamp & PID formatting (default)
 # "syslog" - System logging via vsyslog (compatible with rsyslogd, syslog-ng, systemd-journald)
-# "file"   - Direct append to dedicated log file with timestamp & PID formatting
 # "stderr" - Standard error output (ideal for container supervisor / foreground debugging)
-LogTarget = "syslog"
+LogTarget = "file"
 
 # Dedicated log file path (used when LogTarget = "file")
 # Sending SIGHUP to backupd reopens this file, allowing seamless logrotate operation.
@@ -44,9 +44,9 @@ LogFile = "/var/log/backupd-tyl.log"
 # "debug"   - Verbose protocol tracing and frame-level crypto operations
 # "info"    - General connection handling, commands executed, transfer sizes
 # "notice"  - Service startup, shutdown, and configuration reloads (SIGHUP)
-# "warn"    - Authentication failures, access denials, and socket disconnects
+# "warn"    - Authentication failures, access denials, and socket disconnects (default)
 # "err"     - Fatal or command execution errors
-LogLevel = "info"
+LogLevel = "warn"
 
 # Syslog facility when LogTarget = "syslog":
 # "daemon" (default), "local0" .. "local7", "auth", "user", or numeric value
@@ -59,8 +59,16 @@ AllowLegacy = no
 # Disable reverse DNS lookups for connecting clients (speeds up access checks)
 # NoDNS = 1
 
-# Global access list for the 'LIST' command.
-# Local command sections can override this with their own ListAllow/ListDeny.
+# Global access control filters (Allow and Deny):
+# Resource-level Allow and Deny override these Global lists.
+# If an Allow or Deny directive is omitted in a resource section, the corresponding
+# Global directive is automatically inherited.
+# For example, if Global specifies Allow: 10.0.0.0/8 and Deny: *, and a resource specifies
+# only Deny: 10.10.0.0/16, the resource inherits the 10.0.0.0/8 Allow rule and excludes 10.10.0.0/16.
+Allow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
+Deny  = "*"
+
+# Global access list for the 'LIST' command (resources can override with local ListAllow/ListDeny):
 ListAllow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
 ListDeny  = "*"
 

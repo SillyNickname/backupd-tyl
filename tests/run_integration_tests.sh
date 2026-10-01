@@ -35,6 +35,8 @@ cat <<EOF > "$CONF_FILE"
 Port = $TEST_PORT
 BindAddress = "127.0.0.1"
 AllowLegacy = yes
+Allow = "127.0.0.0/8"
+Deny = "192.168.254.0/24"
 ListAllow = "127.0.0.1/32 localhost"
 PidFile = "$PID_FILE"
 LogTarget = file
@@ -62,6 +64,14 @@ read = "echo hidden"
 [test-legacy]
 write = "cat > $TMP_DIR/legacy.dat"
 read = "cat $TMP_DIR/legacy.dat"
+
+[test-acl-inherited]
+Deny = "127.0.0.2/32"
+read = "echo acl-inherited-ok"
+
+[test-acl-override]
+Allow = "10.0.0.0/8"
+read = "echo should-not-run"
 EOF
 
 cleanup() {
@@ -304,5 +314,84 @@ for ex in "$REPO_DIR"/examples/*.conf; do
 done
 echo "   [PASS] All example configuration files validated successfully with -C"
 
+# 14. Testing Global and Resource Allow/Deny Inheritance & Override
+echo "14. Testing Global and Resource Allow/Deny Inheritance & Override..."
+ACL_CONF="$TMP_DIR/acl_test.conf"
+ACL_PORT=$((TEST_PORT + 1))
+cat << EOF > "$ACL_CONF"
+Port = $ACL_PORT
+BindAddress = "127.0.0.1"
+LogTarget = stderr
+Allow = "127.0.0.0/8"
+Deny  = "*"
+
+[test-resource-override-deny]
+# Overrides global Deny (*) with specific block (10.10.0.0/16), inherits global Allow (127.0.0.0/8)
+Deny = "10.10.0.0/16"
+read = "echo user-override-success"
+
+[test-resource-blocked-by-global-deny]
+# No allow or deny -> inherits global Allow (127.0.0.0/8) AND global Deny (*) -> blocked!
+read = "echo should-never-run"
+EOF
+
+"$BACKUPD" -c "$ACL_CONF" -d -P "$TMP_DIR/acl.pid"
+sleep 0.4
+ACL_PID="$(cat "$TMP_DIR/acl.pid" 2>/dev/null || true)"
+
+# 1. Resource with Deny override should be ALLOWED because local Deny replaces global Deny (*)
+ACL_OUT="$("$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-resource-override-deny 2>/dev/null || true)"
+if [ "$ACL_OUT" != "user-override-success" ]; then
+    echo "FAILED: Resource override of global Deny failed: got '$ACL_OUT'"
+    kill -9 "$ACL_PID" 2>/dev/null || true
+    exit 1
+fi
+echo "   [PASS] Resource Deny override successfully replaced global Deny (*)"
+
+# 2. Resource without Deny override should be BLOCKED because it inherits global Deny (*)
+set +e
+"$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-resource-blocked-by-global-deny >/dev/null 2>&1
+ACL_EC=$?
+set -e
+if [ $ACL_EC -eq 0 ]; then
+    echo "FAILED: Resource without Deny override was not blocked by global Deny (*)"
+    kill -9 "$ACL_PID" 2>/dev/null || true
+    exit 1
+fi
+echo "   [PASS] Resource without Deny override properly inherited global Deny (*)"
+
+kill "$ACL_PID" 2>/dev/null || true
+rm -f "$TMP_DIR/acl.pid" "$ACL_CONF"
+
+# 15. Testing init.d SysVinit Script with Missing PID File Failover
+echo "15. Testing init.d Script Process Table Failover..."
+TEST_INIT="$TMP_DIR/test_init_d"
+sed -e "s|^DAEMON=.*|DAEMON=\"$BACKUPD\"|" \
+    -e "s|^CONF=.*|CONF=\"$CONF_FILE\"|" \
+    -e "s|^PIDFILE=.*|PIDFILE=\"$TMP_DIR/init_test.pid\"|" \
+    -e "s|^ALTPIDFILE=.*|ALTPIDFILE=\"$TMP_DIR/init_test_alt.pid\"|" \
+    "$REPO_DIR/init.d/backupd-tyl" > "$TEST_INIT"
+chmod +x "$TEST_INIT"
+
+# Remove PID file deliberately while server is running to simulate missing/lost PID file
+rm -f "$PID_FILE" "$TMP_DIR/init_test.pid" "$TMP_DIR/init_test_alt.pid"
+
+# Run status - should locate process via process table
+STATUS_OUT="$("$TEST_INIT" status)"
+if ! echo "$STATUS_OUT" | grep -q "running"; then
+    echo "FAILED: init.d script failed to locate daemon in process table without PID file: $STATUS_OUT"
+    exit 1
+fi
+echo "   [PASS] init.d status successfully located daemon in process table without PID file"
+
+# Run stop - should locate and terminate process from process table without PID file
+"$TEST_INIT" stop >/dev/null 2>&1
+sleep 0.5
+if kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "FAILED: init.d stop failed to terminate daemon without PID file"
+    exit 1
+fi
+echo "   [PASS] init.d stop successfully terminated daemon using process table failover"
+
 echo ""
-echo "=== ALL 13 INTEGRATION TESTS PASSED SUCCESSFULLY! ==="
+echo "=== ALL 15 INTEGRATION TESTS PASSED SUCCESSFULLY! ==="

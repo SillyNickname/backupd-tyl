@@ -94,14 +94,18 @@ extern int host_in_list (const char* list_str, const char* client_name, unsigned
 
 int clientaccess (const char* res, const char* allow, const char* deny) {
     const CfgGlobal* g = CfgGetGlobal ();
+    (void)allow; (void)deny;
 
     if (!res || res[0] == '\0') {
-        /* Listing command: check global ListAllow / ListDeny */
-        if (g->list_allow) {
-            return host_in_list (g->list_allow, clientname, clientaddr);
+        /* Listing command: check ListAllow / ListDeny, fallback to global Allow / Deny */
+        const char* eff_allow = g->list_allow ? g->list_allow : g->allow;
+        const char* eff_deny  = g->list_deny  ? g->list_deny  : (g->list_allow ? NULL : g->deny);
+
+        if (eff_allow && !host_in_list (eff_allow, clientname, clientaddr)) {
+            return NO;
         }
-        if (g->list_deny) {
-            return !host_in_list (g->list_deny, clientname, clientaddr);
+        if (eff_deny && host_in_list (eff_deny, clientname, clientaddr)) {
+            return NO;
         }
         return YES;
     }
@@ -109,34 +113,21 @@ int clientaccess (const char* res, const char* allow, const char* deny) {
     const CfgSection* s = CfgGetSection (res);
     if (!s) return NO;
 
-    /* 1. Check local ListAllow / ListDeny if defined, else global */
-    if (s->list_allow || s->list_deny) {
-        if (s->list_allow && !host_in_list (s->list_allow, clientname, clientaddr)) {
-            return NO;
-        }
-        if (s->list_deny && host_in_list (s->list_deny, clientname, clientaddr)) {
-            return NO;
-        }
-    } else {
-        if (g->list_allow && !host_in_list (g->list_allow, clientname, clientaddr)) {
-            return NO;
-        }
-        if (g->list_deny && host_in_list (g->list_deny, clientname, clientaddr)) {
-            return NO;
-        }
-    }
+    /*
+     * Resource Allow and Deny lists override the Global lists.
+     * If a list is not specified at the resource level, the Global list is used.
+     * Fallback chain:
+     * - Allow: s->allow -> g->allow -> g->list_allow
+     * - Deny:  s->deny  -> g->deny  -> (if g->allow ? NULL : g->list_deny)
+     */
+    const char* eff_allow = s->allow ? s->allow : (g->allow ? g->allow : g->list_allow);
+    const char* eff_deny  = s->deny  ? s->deny  : (g->deny  ? g->deny  : (g->allow ? NULL : g->list_deny));
 
-    /* 2. Check allow / deny directives on the section */
-    (void)allow; (void)deny;
-    if (s->allow) {
-        if (!host_in_list (s->allow, clientname, clientaddr)) {
-            return NO;
-        }
+    if (eff_allow && !host_in_list (eff_allow, clientname, clientaddr)) {
+        return NO;
     }
-    if (s->deny) {
-        if (host_in_list (s->deny, clientname, clientaddr)) {
-            return NO;
-        }
+    if (eff_deny && host_in_list (eff_deny, clientname, clientaddr)) {
+        return NO;
     }
 
     return YES;

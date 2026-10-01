@@ -61,6 +61,8 @@ void CfgDone (void) {
     free (global_cfg.bind_address);
     free (global_cfg.default_cipher);
     free (global_cfg.password);
+    free (global_cfg.allow);
+    free (global_cfg.deny);
     free (global_cfg.list_allow);
     free (global_cfg.list_deny);
     free (global_cfg.pid_file);
@@ -214,21 +216,29 @@ unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsign
     CfgSection* s = section_list;
 
     while (s) {
+        /*
+         * Effective Allow for listing: local list_allow -> global list_allow -> local allow -> global allow
+         * Effective Deny for listing:  local list_deny  -> global list_deny  -> (if list_allow specified, NULL; else local deny -> global deny)
+         */
+        const char* eff_allow = NULL;
+        if (s->list_allow)              eff_allow = s->list_allow;
+        else if (global_cfg.list_allow) eff_allow = global_cfg.list_allow;
+        else if (s->allow)              eff_allow = s->allow;
+        else if (global_cfg.allow)      eff_allow = global_cfg.allow;
+
+        const char* eff_deny = NULL;
+        if (s->list_deny)               eff_deny = s->list_deny;
+        else if (global_cfg.list_deny)  eff_deny = global_cfg.list_deny;
+        else if (s->list_allow || global_cfg.list_allow) eff_deny = NULL;
+        else if (s->deny)               eff_deny = s->deny;
+        else if (global_cfg.deny)       eff_deny = global_cfg.deny;
+
         int allowed = YES;
-        /* Local ListAllow/ListDeny overrides global */
-        if (s->list_allow || s->list_deny) {
-            if (s->list_allow) {
-                allowed = host_in_list (s->list_allow, client_name, client_addr);
-            } else if (s->list_deny) {
-                allowed = !host_in_list (s->list_deny, client_name, client_addr);
-            }
-        } else {
-            /* Fallback to global ListAllow/ListDeny */
-            if (global_cfg.list_allow) {
-                allowed = host_in_list (global_cfg.list_allow, client_name, client_addr);
-            } else if (global_cfg.list_deny) {
-                allowed = !host_in_list (global_cfg.list_deny, client_name, client_addr);
-            }
+        if (eff_allow && !host_in_list (eff_allow, client_name, client_addr)) {
+            allowed = NO;
+        }
+        if (eff_deny && host_in_list (eff_deny, client_name, client_addr)) {
+            allowed = NO;
         }
 
         if (allowed) {
@@ -251,13 +261,15 @@ int CfgInit (void) {
     global_cfg.port = DEFAULTPORT;
     global_cfg.bind_address = strdup ("0.0.0.0");
     global_cfg.log_facility = LOG_DAEMON;
-    global_cfg.log_target = strdup ("syslog");
-    global_cfg.log_file = NULL;
-    global_cfg.log_level = TYL_LOG_INFO;
+    global_cfg.log_target = strdup ("file");
+    global_cfg.log_file = strdup ("/var/log/backupd-tyl.log");
+    global_cfg.log_level = TYL_LOG_WARN;
     global_cfg.nodns = 0;
     global_cfg.allow_legacy = 1; /* Default allow legacy clients with warning */
     global_cfg.default_cipher = strdup ("ascon128a");
-    global_cfg.pid_file = strdup ("/run/backupd-tyl.pid");
+    global_cfg.pid_file = strdup ("/var/run/backupd-tyl.pid");
+    global_cfg.allow = NULL;
+    global_cfg.deny = NULL;
 
     FILE* fp = fopen (configname, "r");
     if (!fp) {
@@ -372,10 +384,16 @@ int CfgInit (void) {
             } else if (strcasecmp (key, "password") == 0 || strcasecmp (key, "secret") == 0) {
                 free (global_cfg.password);
                 global_cfg.password = strdup (clean_val);
-            } else if (strcasecmp (key, "listallow") == 0) {
+            } else if (strcasecmp (key, "allow") == 0) {
+                free (global_cfg.allow);
+                global_cfg.allow = strdup (clean_val);
+            } else if (strcasecmp (key, "deny") == 0) {
+                free (global_cfg.deny);
+                global_cfg.deny = strdup (clean_val);
+            } else if (strcasecmp (key, "listallow") == 0 || strcasecmp (key, "list_allow") == 0) {
                 free (global_cfg.list_allow);
                 global_cfg.list_allow = strdup (clean_val);
-            } else if (strcasecmp (key, "listdeny") == 0) {
+            } else if (strcasecmp (key, "listdeny") == 0 || strcasecmp (key, "list_deny") == 0) {
                 free (global_cfg.list_deny);
                 global_cfg.list_deny = strdup (clean_val);
             } else if (strcasecmp (key, "pidfile") == 0 || strcasecmp (key, "pid_file") == 0) {
@@ -456,7 +474,13 @@ int CfgGetStr (const char* Section, const char* Entry, const char* DefVal, char*
     }
 
     if (!Section || Section[0] == '\0') {
-        if (strcasecmp (Entry, "listallow") == 0 && global_cfg.list_allow) {
+        if (strcasecmp (Entry, "allow") == 0 && global_cfg.allow) {
+            StrNCopy (Str, global_cfg.allow, StrSize);
+            return SUCCESS;
+        } else if (strcasecmp (Entry, "deny") == 0 && global_cfg.deny) {
+            StrNCopy (Str, global_cfg.deny, StrSize);
+            return SUCCESS;
+        } else if (strcasecmp (Entry, "listallow") == 0 && global_cfg.list_allow) {
             StrNCopy (Str, global_cfg.list_allow, StrSize);
             return SUCCESS;
         } else if (strcasecmp (Entry, "listdeny") == 0 && global_cfg.list_deny) {

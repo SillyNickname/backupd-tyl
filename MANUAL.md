@@ -484,9 +484,7 @@ exit $RC
 
 Configured via `LogTarget` in `backupd.conf` or CLI option `-t <target>`:
 
-1. **`syslog` (Default)**:
-   Routes log messages directly to the local syslog daemon (`rsyslogd`, `syslog-ng`, or `systemd-journald`) using standard POSIX `vsyslog()`. If run on an interactive terminal, logs are also mirrored to standard error.
-2. **`file`**:
+1. **`file` (Default)**:
    Writes directly to a dedicated log file (`LogFile = "/var/log/backupd-tyl.log"`). Lines are formatted with microsecond timestamps, worker PID, level tag, and client context:
    ```
    2026-09-30 13:52:14.412 [184724] [NOTICE] backupd-tyl v1.1.0 standalone service listening on 0.0.0.0:12153 (pid 184724)
@@ -494,6 +492,8 @@ Configured via `LogTarget` in `backupd.conf` or CLI option `-t <target>`:
    2026-09-30 13:52:20.114 [184730] [INFO] Secure session established using ascon128a with client 192.168.1.50
    2026-09-30 13:52:25.890 [184730] [INFO] WRITE completed successfully for 192.168.1.50 (1048576 bytes transferred)
    ```
+2. **`syslog`**:
+   Routes log messages directly to the local syslog daemon (`rsyslogd`, `syslog-ng`, or `systemd-journald`) using standard POSIX `vsyslog()`. If run on an interactive terminal, logs are also mirrored to standard error.
 3. **`stderr`**:
    Writes formatted log messages directly to standard error. Ideal for container environments (Docker, Kubernetes) and systemd unit supervision.
 
@@ -504,7 +504,7 @@ Configured via `LogLevel` in `backupd.conf` or CLI option `-L <level>`:
 - `debug`: Traces internal operations, ephemeral key generation, and frame exchanges.
 - `info`: Logs successful connections, negotiated ciphers, and bytes transferred.
 - `notice`: Logs service startup, shutdown, and configuration reloads (`SIGHUP`).
-- `warn`: Logs authentication failures, unauthorized client connection attempts, and timeouts.
+- `warn` (Default): Logs authentication failures, unauthorized client connection attempts, and timeouts.
 - `err`: Logs fatal errors and external command execution failures.
 
 ### Logrotate Integration
@@ -549,10 +549,10 @@ PidFile = "/var/run/backupd-tyl.pid"
 # Default encryption cipher: "ascon", "speck", "chacha20", "xchacha20", "aes256", or "aes128"
 DefaultCipher = "ascon"
 
-# Logging configuration
-LogTarget   = "syslog"
+# Logging configuration (defaults: LogTarget = "file", LogLevel = "warn")
+LogTarget   = "file"
 LogFile     = "/var/log/backupd-tyl.log"
-LogLevel    = "info"
+LogLevel    = "warn"
 LogFacility = "daemon"
 
 # Allow unencrypted v0.20 legacy clients (yes/no)
@@ -560,6 +560,12 @@ AllowLegacy = no
 
 # Disable reverse DNS lookups for client IP addresses
 NoDNS = 1
+
+# Global access control filters (Allow and Deny)
+# Resource-level Allow/Deny override these Global lists.
+# If an Allow or Deny rule is omitted on a resource, the Global rule is inherited.
+Allow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
+Deny  = "*"
 
 # Global access list for the 'LIST' discovery command
 ListAllow = "127.0.0.1/32 192.168.1.0/24"
@@ -591,7 +597,12 @@ write    = "cat > /var/backups/target.dat"
 # Command executed when client reads (-r)
 read     = "cat /var/backups/target.dat"
 
-# Access control specific to this resource
+# Access control: Resource Allow/Deny override Global lists.
+# If omitted, the Global rule is used. For example, to exclude 10.10.0.0/16 while
+# inheriting Global Allow: 10.0.0.0/8:
+Deny      = "10.10.0.0/16"
+
+# Discovery list visibility specific to this resource (overrides Global ListAllow/ListDeny)
 ListAllow = "192.168.1.0/24"
 ListDeny  = "*"
 ```

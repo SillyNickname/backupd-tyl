@@ -20,48 +20,139 @@ NAME="backupd-tyl"
 DESC="Remote backup daemon"
 CONF="/etc/backupd-tyl/backupd.conf"
 PIDFILE="/var/run/backupd-tyl.pid"
+ALTPIDFILE="/run/backupd-tyl.pid"
 
 test -x "$DAEMON" || exit 0
 test -f "$CONF" || exit 0
 
+find_daemon_pids() {
+    local pids=""
+    # 1. Primary PID file
+    if [ -f "$PIDFILE" ]; then
+        for p in $(cat "$PIDFILE" 2>/dev/null); do
+            if kill -0 "$p" 2>/dev/null; then
+                pids="$pids $p"
+            fi
+        done
+    fi
+    # 2. Alternate PID file (/run vs /var/run)
+    if [ -z "$pids" ] && [ -f "$ALTPIDFILE" ]; then
+        for p in $(cat "$ALTPIDFILE" 2>/dev/null); do
+            if kill -0 "$p" 2>/dev/null; then
+                pids="$pids $p"
+            fi
+        done
+    fi
+    # 3. Process table failover: locate running backupd daemon if PID file is absent or stale
+    if [ -z "$pids" ]; then
+        local raw=""
+        if command -v pidof >/dev/null 2>&1; then
+            raw="$(pidof "$DAEMON" 2>/dev/null || pidof backupd 2>/dev/null)"
+        fi
+        if [ -z "$raw" ] && command -v pgrep >/dev/null 2>&1; then
+            raw="$(pgrep -f "^$DAEMON" 2>/dev/null || pgrep -x backupd 2>/dev/null)"
+        fi
+        if [ -z "$raw" ]; then
+            raw="$(ps -eo pid,comm 2>/dev/null | awk '$2 == "backupd" {print $1}')"
+        fi
+        for p in $raw; do
+            if [ "$p" != "$$" ] && kill -0 "$p" 2>/dev/null; then
+                pids="$pids $p"
+            fi
+        done
+    fi
+    # Clean whitespace and return unique PIDs
+    echo "$pids" | tr -s ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^[ \t]*//;s/[ \t]*$//'
+}
+
+start_daemon() {
+    local pids
+    pids="$(find_daemon_pids)"
+    if [ -n "$pids" ]; then
+        echo "Starting $DESC: $NAME (already running: PID $pids)."
+        return 0
+    fi
+
+    echo -n "Starting $DESC: $NAME"
+    $DAEMON -c "$CONF" -d
+    local ret=$?
+    if [ $ret -eq 0 ]; then
+        # Allow process a moment to initialize and write its PID file
+        sleep 0.3
+        local new_pids
+        new_pids="$(find_daemon_pids)"
+        if [ -n "$new_pids" ]; then
+            if [ ! -f "$PIDFILE" ] && [ ! -f "$ALTPIDFILE" ]; then
+                echo "$new_pids" | awk '{print $1}' > "$PIDFILE" 2>/dev/null || true
+            fi
+        fi
+        echo "."
+        return 0
+    else
+        echo " (failed)."
+        return 1
+    fi
+}
+
+stop_daemon() {
+    local pids
+    pids="$(find_daemon_pids)"
+    if [ -n "$pids" ]; then
+        echo -n "Stopping $DESC: $NAME (PID $pids)"
+        for pid in $pids; do
+            kill -TERM "$pid" 2>/dev/null || true
+        done
+
+        # Wait up to 3 seconds for graceful shutdown
+        local waited=0
+        while [ $waited -lt 30 ]; do
+            local still_running=0
+            for pid in $pids; do
+                if kill -0 "$pid" 2>/dev/null; then
+                    still_running=1
+                    break
+                fi
+            done
+            if [ $still_running -eq 0 ]; then
+                break
+            fi
+            sleep 0.1
+            waited=$((waited + 1))
+        done
+
+        # Force terminate if still running
+        for pid in $pids; do
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -KILL "$pid" 2>/dev/null || true
+            fi
+        done
+
+        rm -f "$PIDFILE" "$ALTPIDFILE"
+        echo "."
+        return 0
+    else
+        echo "Stopping $DESC: $NAME (not running)."
+        rm -f "$PIDFILE" "$ALTPIDFILE"
+        return 0
+    fi
+}
+
 case "$1" in
     start)
-        echo -n "Starting $DESC: $NAME"
-        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-            echo " (already running)."
-            exit 0
-        fi
-        $DAEMON -c "$CONF" -d
-        if [ $? -eq 0 ]; then
-            echo "."
-        else
-            echo " (failed)."
-            exit 1
-        fi
+        start_daemon
         ;;
     stop)
-        echo -n "Stopping $DESC: $NAME"
-        if [ -f "$PIDFILE" ]; then
-            PID="$(cat "$PIDFILE")"
-            kill "$PID" 2>/dev/null || true
-            sleep 1
-            if kill -0 "$PID" 2>/dev/null; then
-                kill -9 "$PID" 2>/dev/null || true
-            fi
-            rm -f "$PIDFILE"
-            echo "."
-        else
-            echo " (not running)."
-        fi
+        stop_daemon
         ;;
     restart|force-reload)
-        $0 stop
+        stop_daemon
         sleep 1
-        $0 start
+        start_daemon
         ;;
     status)
-        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-            echo "$NAME is running (pid $(cat "$PIDFILE"))."
+        pids="$(find_daemon_pids)"
+        if [ -n "$pids" ]; then
+            echo "$NAME is running (PID $pids)."
             exit 0
         else
             echo "$NAME is stopped."
@@ -74,4 +165,4 @@ case "$1" in
         ;;
 esac
 
-exit 0
+exit $?

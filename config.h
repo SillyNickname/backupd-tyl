@@ -43,13 +43,15 @@ typedef struct {
     int   port;
     char* bind_address;
     int   log_facility;
-    char* log_target;           /* "syslog", "file", "stderr" */
-    char* log_file;             /* Path to log file */
-    int   log_level;            /* Log level threshold (DEBUG..ERR) */
+    char* log_target;           /* "file", "syslog", "stderr" (default: file) */
+    char* log_file;             /* Path to log file (default: /var/log/backupd-tyl.log) */
+    int   log_level;            /* Log level threshold (default: TYL_LOG_WARN) */
     int   nodns;
     int   allow_legacy;
     char* default_cipher;
     char* password;             /* Global fallback password */
+    char* allow;                /* Global fallback Allow */
+    char* deny;                 /* Global fallback Deny */
     char* list_allow;           /* Global ListAllow */
     char* list_deny;            /* Global ListDeny */
     char* pid_file;
