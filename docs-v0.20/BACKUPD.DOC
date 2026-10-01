@@ -1,0 +1,323 @@
+
+	       	   backupd - a backup daemon for linux
+
+       (C) Copyright 1998 Ullrich von Bassewitz (uz@musoftware.de)
+
+
+
+This is a more in-depth discussion of backupd. For an overview about the
+concepts and features, have a look at OVERVIEW.TXT.
+
+
+
+Command line parameters for the server
+--------------------------------------
+
+backupd accepts one command line parameter:
+
+    -c name    Use other config file than /etc/backupd.conf
+    -V         Print version information
+
+
+
+Command line parameters for the clients
+---------------------------------------
+
+backupc accepts some command line parameters:
+
+    -b n       Use n KB as block size
+    -h host    Connect to the named host (default is localhost)
+    -l         List available resources on the server
+    -p port    Connect to port instead of 12153
+    -r res     Read the given resource
+    -V         Print version information
+    -w res     Write to the given resource
+
+Beware: Order is important here. The command line
+
+    backupc -h host1 -r tape1 -h host2 -r tape2
+
+connects to host1 and requests the data from tape1, then connects to
+host2 and requests the data from tape2.
+
+
+
+Entries in /etc/backupd.conf
+----------------------------
+
+There are two types of entries in the config file (usually
+/etc/backupd.conf): Global ones and resource specific ones. Global
+entries will set some program options, whereas resource options say how
+to handle a resource.
+
+
+Global options:
+
+Global options are all options before the first resource name (a name in
+square brackets). Supported options are:
+
+LogFacility = n
+
+    Use n as log facility when writing to syslog. The default is
+    LOG_DAEMON.
+
+ListAllow   = "host list"
+ListDeny    = "host list"
+
+    Allow or disallow the use of the LIST command (-l switch in backupc).
+    Host list is a whitespace separated list of host names (wildcards
+    allowed) or ip numbers (dotted quad with an optional bit value).
+    Example:
+
+	ListAllow   = "*.mydomain.de 127.0.0.1/32"
+
+    If an ListAllow directive exists, only hosts listed may use the LIST
+    command. If the ListAllow directive does not exist, but there's a
+    ListDeny directive, all hosts may use the LIST command with the
+    expception of those, listed in the ListDeny list.
+
+    If there's neither an ListAllow, nor a ListDeny directive, every host
+    that is able to connect may also use the LIST command.
+
+NoDNS = n
+
+    Don't try to resolve the clients name. This may be an option if you
+    have a dialup connection and don't want the dialout to be triggered
+    by a DNS lookup. 'n' is an integer, if it is zero (the default), DNS
+    lookups are done. If 'n' is not zero, backupd will not do DNS lookups
+    for the client name.
+
+    Note: If you're using access lists, you may not use names if you don't
+    allow DNS lookups.
+
+
+Resource options:
+
+Each entry starts with the name of the resource in square brackets. The
+matching is NOT case sensitive. Spaces in the resource name will
+currently work, but this is an unwanted feature and will get removed in
+an upcoming release, so don't use it.
+
+Following the resource name, you can use one or more of the following
+directives (a '*' means that the directive is mandatory). Note: String
+variables are enclosed in double quotes, numbers are not.
+
+
+user     = "username"
+group    = "groupname"
+
+    backupd will run as root, but will change it's uid/gid according to
+    this settings, before doing actual reads and writes. Note: The
+    lockfile is created *after* becoming another user, so the directory
+    for the lockfile has to be writeable by this user.
+
+    You are strongly encouraged to use these directives.
+
+
+write    = "write command"             *
+read     = "read command"              *
+
+    These are the commands that backupd uses to read or write the
+    resource. Only your imagination is the limit for what to put into
+    these directives. backupd uses popen() to create a pipe to the
+    commands, and popen uses the shell ("/bin/sh -c") to execute the
+    commands, so you may put wildcards, output redirections and other
+    stuff in here.
+
+    The commands given may contain some meta characters:
+
+      \h  is replaced by the hostname of the client
+      \H  is replaced by the hostname of the client, but all characters
+          that aren't allowed in filenames are changed into dashes.
+      \\ is replaced by the backslash itself.
+
+    When starting the external command, all standard file descriptors
+    that aren't used are connected to /dev/null. So if you want to
+    evaluate error messages, the command sends to stderr, you have to do
+    that yourself. If you don't setup a special handling, the messages
+    are discarded (feedback about the success of the command is given by
+    the return code of the command).
+
+    Minor gotcha:
+
+      * There is no command line continuation. If the line gets too long
+	(internal limit is 1024 chars), think about using a shell script.
+
+
+lockfile = "name of lockfile"
+
+    backupd will do resource locking if you give it the name of a
+    lockfile. The name may contain the same meta characters as the read
+    and write commands.
+
+    Please note:
+
+      * The lockfile is created after changing user/group, so the
+	directory given here must be searchable/writeable by the user in
+	the "user=" directive (if any).
+
+      * Locking is done by "open (lockfile, O_CREAT | O_EXCL)". This will
+	*not* work (and give all sorts of strange errors) if the lockfile
+	is on a remote disk. You should use a directory on a local disk
+	here.
+
+
+umask = 0022
+
+    You may give an umask value that is used when creating files (even by
+    subprocesses, if not overridden). Use a leading '0' when specifying
+    an octal value, use 0x for hexadecimal values.
+    If you don't specify an umask, the default value (0077) applies.
+
+
+allow = "host list"
+deny  = "host list"
+
+    Set up client based resource access. Host list is a whitespace
+    separated list of host names (wildcards allowed) or ip numbers
+    (dotted quad with an optional bit value). Example:
+
+	allow = "*.mydomain.de 127.0.0.1/32"
+
+    If an allow directive exists, client access is allowed if the host is
+    in the list, and denied if the host is not in the list. If a there is
+    no allow directive, but a deny directive, access is allowed if the
+    client is not in the list.
+
+    If there's neither an allow, nor a deny directive, access will be
+    granted to every host.
+
+
+
+Firewalling a backupd connection
+--------------------------------
+
+backupd uses one straight TCP connection to do it's work. The default
+port is 12153.
+
+
+
+Windows & OS/2 Utilities
+------------------------
+
+Thanks to Andreas Kaiser (who did the port of gtar to OS/2), there's now
+a package that contains both executables (backupc and tar) that are needed
+to do full backups for OS/2. The OS/2 port of gtar is very well done and
+you're able to archive complete disks including extended attributes.
+
+Unfortunately, this cannot be said about the NT port of gtar. It is not
+able to read some of the system files. As usual, Microsoft itself has a
+utility that is able to read *all* files (they have all the secret
+information how to do that :-(), but it's GUI based and does not work
+with backupc. If you know about a better gtar port, please let me know.
+I've already tried the GNUWin32 port, but it crashes without any visible
+cause.
+
+The Windows gtar will also try to set creation/modification times when
+doing a -xp. All these calls will fail and will give error messages. If
+restoring the original times for directiories is not important for you,
+you may ignore these messages (I admit it's annoying - if you have a
+better tar port, please let me know).
+
+I've already contacted the author but did not receive an answer. Since
+gtar it is GNU software, I will provide also a complete binary package
+for NT. I hope to have a better solution for the next release of
+backupd.
+
+
+
+Sample configurations
+---------------------
+
+An entry for a SCSI tape:
+
+[tape0]
+write  	 = "dd of=/dev/st0 bs=32k"
+read 	 = "dd if=/dev/st0 bs=32k"
+lockfile = "/tmp/backupd-tape0.lock"
+allow    = "*.mydomain.com localhost loopback"
+
+
+Say you want to backup a pool of windoze clients without much work. You
+may use this entry on the server:
+
+[daily]
+user     = "backup"
+group    = "backup"
+write  	 = "gzip -c9 > /backup/\H"
+read   	 = "gzip -cd9 < /backup/\H"
+lockfile = "/tmp/backupd-\H.lock"
+umask    = 0037
+
+This will create and read compressed files with the names of the hosts
+that use the resource. The lockfile used is also dependent on the name of
+the client, so it is possible for more than one client to connect to this
+resource at a time (you may think about compressing the data on the
+clients in this case since several running gzips will give a heavily
+loaded server:-). The resulting files will be owned by user/group backup
+and have mode 640 (aren't readable for others).
+
+You may want to combine this with a daily running cron script that sends
+mail to the backup operator if one of the clients hasn't done a backup
+for more than three days.
+
+
+backupd is able to proxy itself. This may come in handy, if your clients
+hide behind a firewall, or if you temporarily want to reroute a resource
+(maybe your tape is broken or got moved). Use an entry like
+
+[tape0]
+write  	 = "backupc -h otherhost -w tape0"
+read   	 = "backupc -h otherhost -r tape0"
+
+to reroute the connection to the host "otherhost". Note: The \h and \H
+meta characters on the final host will not expand to the real client in
+this case, but to the host rerouting the resource.
+
+
+You are not limited to anything like backups. Why not have a (read-only)
+resource named "fortune" that is defined like this:
+
+[fortune]
+user     = "nobody"
+group    = "nobody"
+read   	 = "/usr/games/fortune"
+
+Having a fortune resource is fun (and it is useful for testing the
+connection to the server).
+
+
+
+Known bugs/problems
+-------------------
+
+This software is currently BETA, so there may be lots of bugs. Here is a
+list of the problems currently known:
+
+  - The client may not always detect an error with the external command
+    on the server immediately. So, if you forget to insert your tape, the
+    client will tell you about it *after* your 21GB hard disk was
+    transfered over your 33.6k dialup connection.
+
+  - Data and command channel are not separate. The data channel uses a
+    block counter mechanism with about 0.4% (1/256) overhead.
+
+  - Reading and writing is currently somewhat unefficient, it causes more
+    load on the server than necessary. There's some more investigation
+    needed but most of the load seems to be caused by the kernel drivers.
+    When doing a remote backup on a SCSI tape I get a load of about 1.20,
+    but backupc itself uses only 20% of the CPU time (486/100). This is
+    only true for the server. The client (backupc) does not cause
+    noticeable loads when doing tape backups. Worst thing is the disk
+    access.
+
+  - backupc does work on Windows 95 as far my experience goes. The only
+    problem is the MS-DOS prompt: When using pipes, it has the stupid old
+    DOS behavior, that is, it writes all data into a temporary file,
+    before starting the second program with the temporary file connected
+    to stdin or stdout. You may want to use the tcsh port from
+
+        ftp://ftp.blarg.net/users/amol/tcsh/
+
+    to work around this as described in OVERVIEW.TXT.
+

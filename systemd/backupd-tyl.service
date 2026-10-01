@@ -1,0 +1,29 @@
+#
+# backupd-tyl.service - systemd unit for backupd-tyl daemon
+# (C) 2026 Antigravity / Gemini (Google DeepMind)
+# Part of backupd-tyl (Backupd - Thirty Years Later)
+# Requested and Commissioned by: Andre Kajita (kajita@univap.br)
+#
+[Unit]
+Description=backupd-tyl - Thirty Years Later Remote Backup Daemon
+Documentation=man:backupd(8) file:///usr/local/share/doc/backupd-tyl/MANUAL.md
+After=network.target remote-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/backupd -c /etc/backupd-tyl/backupd.conf -F
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+# Process and resource limits
+LimitNOFILE=65536
+
+# Security hardening sandbox
+PrivateTmp=true
+ProtectSystem=full
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_KILL
+NoNewPrivileges=no
+
+[Install]
+WantedBy=multi-user.target

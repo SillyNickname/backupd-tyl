@@ -1,0 +1,77 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          backupd-tyl
+# Required-Start:    $network $local_fs $remote_fs $syslog
+# Required-Stop:     $network $local_fs $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Remote backup daemon (backupd-tyl)
+# Description:       backupd-tyl (Backupd - Thirty Years Later) is a secure,
+#                    lightweight remote backup streaming service.
+### END INIT INFO
+#
+# (C) 2026 Antigravity / Gemini (Google DeepMind)
+# Part of backupd-tyl (Backupd - Thirty Years Later)
+# Requested and Commissioned by: Andre Kajita (kajita@univap.br)
+#
+
+DAEMON="/usr/local/sbin/backupd"
+NAME="backupd-tyl"
+DESC="Remote backup daemon"
+CONF="/etc/backupd-tyl/backupd.conf"
+PIDFILE="/var/run/backupd-tyl.pid"
+
+test -x "$DAEMON" || exit 0
+test -f "$CONF" || exit 0
+
+case "$1" in
+    start)
+        echo -n "Starting $DESC: $NAME"
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo " (already running)."
+            exit 0
+        fi
+        $DAEMON -c "$CONF" -d
+        if [ $? -eq 0 ]; then
+            echo "."
+        else
+            echo " (failed)."
+            exit 1
+        fi
+        ;;
+    stop)
+        echo -n "Stopping $DESC: $NAME"
+        if [ -f "$PIDFILE" ]; then
+            PID="$(cat "$PIDFILE")"
+            kill "$PID" 2>/dev/null || true
+            sleep 1
+            if kill -0 "$PID" 2>/dev/null; then
+                kill -9 "$PID" 2>/dev/null || true
+            fi
+            rm -f "$PIDFILE"
+            echo "."
+        else
+            echo " (not running)."
+        fi
+        ;;
+    restart|force-reload)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    status)
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "$NAME is running (pid $(cat "$PIDFILE"))."
+            exit 0
+        else
+            echo "$NAME is stopped."
+            exit 3
+        fi
+        ;;
+    *)
+        echo "Usage: /etc/init.d/$NAME {start|stop|restart|force-reload|status}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

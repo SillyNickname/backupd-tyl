@@ -1,0 +1,108 @@
+feat: initial release of backupd-tyl (Backupd - Thirty Years Later) v1.2.0
+
+=== SOFTWARE FUNCTIONALITY ===
+backupd-tyl is a modernized, lightweight, security-hardened remote streaming
+backup system for Linux, based on the original 1998 backupd software by
+Ullrich von Bassewitz. It connects a streaming client (backupc) to a remote
+server daemon (backupd) to execute command pipelines with output streamed
+over an encrypted, authenticated transport.
+
+Key capabilities:
+- On-The-Fly TLS-Style Cryptography:
+  * Ephemeral Curve25519 (X25519) Diffie-Hellman key exchange per session.
+  * HKDF-SHA256 session key derivation with 64-bit sequence-countered AEAD framing.
+  * Broad cipher suite portfolio: ASCON-128a (NIST LWC standard, default),
+    Speck-128/128-Poly1305, ChaCha20-Poly1305 (RFC 8439), XChaCha20-Poly1305
+    (extended 192-bit nonce), AES-128-GCM, and AES-256-GCM (NIST SP 800-38D).
+- Dual-Engine Cryptography (Package-Managed & Pure-C Standalone):
+  * Links against system OpenSSL libcrypto for hardware acceleration (AES-NI / AVX).
+  * Automatically detects outdated host libraries (OpenSSL < 1.1.1 baseline)
+    and falls back to included pure-C constant-time implementations.
+  * Self-contained standalone mode with zero external dependencies (< 110 KB).
+- Server Daemon & Configuration:
+  * Pre-cryptographic shared password authentication per resource to eliminate
+    CPU exhaustion DoS attacks on asymmetric mathematical operations.
+  * Multi-line command pipelines via backslash continuation and '{ ... }' blocks.
+  * Local ListAllow and ListDeny per resource overriding global ACLs.
+  * Standalone TCP daemon (port 12153), foreground supervisor, and inetd modes.
+  * Comprehensive logging subsystem (file, syslog/rsyslog, stderr) with SIGHUP reload.
+- Client Observability & Control:
+  * Handshake negotiation audit tracing (-N / --log-negotiation).
+  * Real-time network throughput and transfer rate monitoring (-T / --throughput).
+  * Standardized exit codes (0 to 9) for robust shell script orchestration.
+  * Legacy mode (-L / --legacy) for compatibility with unencrypted 1998 v0.20 hosts.
+- Tooling & Enterprise Ecosystem:
+  * Pre-compiled zero-dependency 64-bit ELF binaries in bin/.
+  * Distribution-aware installer (scripts/install.sh) with --precompiled option.
+  * Production configurations in examples/ (PostgreSQL, MySQL, ZFS, Btrfs, tape, VMs).
+  * Full technical manual (MANUAL.md) and future roadmap (POST_2020_ROADMAP.md).
+
+=== COMPREHENSIVE SECURITY AUDIT & HARDENING ===
+A thorough defensive security audit was conducted across the server and client
+codebases to eliminate memory corruption hazards, privilege escalation vectors,
+file descriptor leaks, and command injection channels:
+
+1. Privilege Dropping & Escalation Immunity (backupd.c, changeuser):
+   - Audited user and group switching for resource execution.
+   - Enforced strict return-code validation on initgroups(user, target_gid);
+     failures immediately terminate the process to prevent running with
+     unintended supplementary group privileges.
+   - When a group is configured without a dedicated user, setgroups(1, &target_gid)
+     is explicitly called to strip root's supplementary groups (e.g. wheel, sudo).
+   - Implemented permanent privilege drop verification: the process actively
+     asserts that calling setuid(0) and seteuid(0) fails after privilege drop,
+     guaranteeing that compromised child workers cannot re-escalate to root.
+
+2. File Descriptor Leak Prevention (extcmd.c, startcmd):
+   - Audited subprocess spawning before execl("/bin/sh", "sh", "-c", cmdline).
+   - The child process now explicitly closes all inherited file descriptors
+     above stderr (fd >= 3) prior to executing the shell.
+   - Prevents the daemon's TCP master listening socket, active connection handles,
+     log file descriptors, and IPC pipes from leaking into external backup tools.
+
+3. Reverse DNS Shell Command Injection Hardening (client.c & util.c):
+   - Audited getnameinfo() reverse DNS resolution in client.c. Malicious or
+     spoofed DNS PTR records could inject shell metacharacters (; & | ` $()).
+   - Strictly sanitized clientname using validfilechar(), permitting only
+     alphanumeric characters, '.', '-', and '_', replacing all other characters
+     with '_'.
+   - Applied the same strict character filtering in expand_meta() during \h
+     and \H command template expansion to ensure client hostnames cannot alter
+     the structure of executed shell commands.
+
+4. Stack Buffer Overflow Prevention in Line Continuation (config.c):
+   - Audited backslash line continuation ('\') in the configuration parser.
+   - Fixed buffer capacity calculation for strncat: accurately constrained appends
+     to sizeof(line) - (val - line) - strlen(val) - 1, preventing stack memory
+     writes past line[4096].
+
+5. Socket Multiplexing Scalability & Memory Safety (util.c, read_line_timeout):
+   - Replaced select() with standard POSIX poll() in timed network reads.
+   - Eliminates undefined memory corruption and stack overflow when connection
+     file descriptors exceed FD_SETSIZE (1024) under heavy server loads.
+
+6. Timing-Safe Password Verification (crypto/tyl_crypto.c):
+   - Eliminated side-channel password length leakage caused by early return on
+     length mismatch in tyl_crypto_verify_password().
+   - Verification now evaluates all bytes in constant time across max(len1, len2)
+     using a bitwise difference accumulator.
+
+7. CIDR Bit-Shift Safety & ACL Truncation Fix (config.c, host_in_list):
+   - Validated IPv4 octets (q1..q4 <= 255) and subnet prefix (bits <= 32)
+     to prevent undefined behavior from shift overflow in ~0UL << (32 - bits).
+   - Converted ACL list tokenization from a fixed 1024-byte stack buffer to
+     dynamic allocation, eliminating silent truncation of large access lists.
+
+8. Bounded Frame Reception (crypto/tyl_crypto.c, tyl_crypto_recv_frame):
+   - Enforced strict validation pt_len <= TYL_MAX_FRAME_PAYLOAD (65519) on
+     incoming frame length headers, preventing arbitrary memory allocation on
+     receipt of malformed or malicious network frames.
+
+9. Parameter Boundary Parsing (backupd.c, parse_param):
+   - Parameter searching (key=) now requires word boundaries (start of line or
+     preceding whitespace), preventing substring false positives (e.g. res=
+     matching inside other_res=).
+
+Commissioned by: Andre Kajita (kajita@univap.br)
+Modernized by: Antigravity / Gemini (Google DeepMind, 2026)
+Original author: Ullrich von Bassewitz (1998, uz@musoftware.de [inactive])

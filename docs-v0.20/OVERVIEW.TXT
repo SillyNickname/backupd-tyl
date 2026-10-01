@@ -1,0 +1,258 @@
+
+	       	   backupd - a backup daemon for linux
+
+       (C) Copyright 1998 Ullrich von Bassewitz (uz@musoftware.de)
+
+
+
+What is it?
+-----------
+
+backupd is a small client/server backup solution for environments with
+different operating systems. It follows strictly the KISS principle, is
+easy to set up and to administer.
+
+
+
+Why backupd?
+------------
+
+My working environment here at home is a small network with most boxes
+running Linux, but some others running Windows NT or OS/2. I'm doing
+network administration for other people where the situation is similar or
+even more biased towards Windows.
+
+I have had a SCSI tape drive and several disks for backup purposes in the
+local net. However, doing backups was a pain, since I had no backup
+software that was available for every operating system, and so I had to
+manually connect the DAT drive to one of the computers, reboot computers,
+work with different software and more.
+
+Linux itself is not very much a problem in this respect, since gtar
+supports backups via the network. Unfortunately, it uses rsh for this
+purpose, with all security related consequences. For OS/2, rsh can also
+be used, but what if you don't want any user to have logins on the
+server used for a backup?
+
+So I wrote backupd as a more or less generic solution for my backup
+problem. It may solve yours, too.
+
+backupd ...
+
+  * ... is very simple to setup and to administer.
+
+  * ... uses standard tools to do it's work, doesn't reinvent the wheel.
+
+  * ... works great in todays heterogeneous networks.
+
+  * ... is more secure than a rsh based solution since the server setup
+    determines, what is executed on the server, not the client. No
+    interactive login required.
+
+
+
+What does it do?
+----------------
+
+backupd is a client/server application. The server is Linux only (well,
+there's nothing special about the code, it should compile under other
+Unices without changes, but who cares?). The clients run under NT or
+Win95 (there's one problem with Win95, see below), OS/2 and Linux. The
+server supports a nearly unlimited count of resources. When connected, a
+client tells the server, which resource it wants to write or read.
+
+The name of the package is somewhat misleading, since client and server
+do not really care about backups. What they do is transmitting data to
+and from a resource. This makes backupd very simple, since the client
+does not care how to collect files on the local disk. It relies
+completely on another program to do that. On the server side, it's the
+same: The server does not know anything about tapes or disks, it pipes
+the data into a shell command.
+
+In addition, the server does not really run as a daemon but is started by
+inetd. This way, it does not use any resources when it is not used.
+
+
+
+What does it *not* do?
+----------------------
+
+The client is not able to read files, scan disks or any other thing, you
+expect from a generic backup program. There are lots of programs
+available that do archiving, including gtar, so there's no need to write
+another such program. This does also mean, that the client does not
+provide a capability to browse an archive (it does not know anything
+about archives).
+
+The server does not know anything about tapes, disks or other stuff, it
+pipes the data received from the client into a shell command. The server
+relies on the tcpwrappers module and inetd for security (or your
+firewall, if you have one). If your client is able to connect to the
+server, the server will take happily all data it gets from the client and
+write it to a resource, if requested to do so.
+
+Another thing, the server is not able to do is to start the backup
+operation itself (it is almost impossible to do that in a portable way,
+and most Windows and OS/2 clients do not run 24/7 anyway). You have to
+start the backup from the client(s).
+
+Both programs also don't do encryption. If you need encryption, you may
+tunnel the connection over ssh (I've not tried this, however).
+
+By concentrating on just one thing (getting data from and to a server),
+both programs are very small and simple.
+
+So backupd is clearly not a solution for pure Unix networks (but it may
+have some advantages to use it even in such an environment). It is aimed
+for small heterogenous LANs (but then, there's nothing that keeps you from
+making backups via a dialup connection, all you need is TCP/IP
+networking).
+
+
+
+An example please...
+--------------------
+
+Server resources are defined in /etc/backupd.conf. Here is a sample for
+a resource named "tape0":
+
+-------------------------------------------------------------------
+[tape0]
+user  	 = "nobody"
+group 	 = "disk"
+write  	 = "dd of=/dev/st0 bs=32k"
+read 	 = "dd if=/dev/st0 bs=32k"
+lockfile = "/tmp/tape0.lock"
+-------------------------------------------------------------------
+
+The section is more or less self explaining. It describes, what the
+server has to do, if the client requests reads from or writes to the
+given resource.
+
+Now, as you have prepared your server using the config file shown above
+all you have to do is to insert a tape into your tape drive and issue the
+following command on your OS/2 or NT box:
+
+    tar -cf - . | backupc -h backuphost -w tape0
+
+The backup client will then connect to the host named "backuphost", and
+write all data it gets on stdin to the resource tape0.
+
+For read access, use
+
+    backupc -h backuphost -r tape0 | tar -xf -
+
+So, the main part is to setup the server, but this has to be done only
+once. On the client, you need some sort of archiver. Fortunately, gtar is
+readily available for both, OS/2 and Win32 and works great with backupc.
+
+As you can easily see, the solution is very flexible. You may pipe the
+data through gzip on the client or on the server side, or even zip it on
+the client and unzip it on the server side, or use any other shell
+command to filter the data. However, you are not restricted to filters.
+You might use something like
+
+    write = "(cat > /backups/thisclient/`date +%Y-%m-%d.tar`) 2> /dev/null"
+
+to create daily backups from a client, or even use a much more complex
+shell script that does numbered backups or whatever.
+
+
+
+How do I access my data in case of an emergency?
+------------------------------------------------
+
+backupd does not help you with that. So, if the hard disk on your NT box
+gets damaged, and you are no longer able to boot your operating system,
+you have a problem. Here are some proposed solutions:
+
+  * Separate your operating system and your other data. In case of an
+    emergency, restore the OS from your original CD, then access backupd
+    over the net and restore your data.
+
+  * Try to create a boot disk that has network support. This is no
+    problem for Linux (every modern Linux distribution has networking
+    when using the standard boot disk), it may work with OS/2, but I
+    doubt, it is possible with NT.
+
+  * Attach the a tape drive directly to your system. Remember that
+    backupd is completely transparent for your data. Writing a tar
+    archive via backupd is the same as writing it directly.
+
+backupd simplifies the task of making backups so that you are able to do
+it more regularily. It does not include any help for restoring systems
+from scratch.
+
+
+
+What copyright does it have?
+----------------------------
+
+Here's the copyright for the sources and the binaries (the copyrights for
+the binary GNU tools distributions for OS/2 and NT are different, see
+separate texts in the archives):
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not
+     be misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source
+     distribution
+
+
+	       
+Where do I get the stuff?
+-------------------------
+
+I will probably prepare a RPM archive in the near future. Since this is
+some work (it's not just installing files, /etc/inetd.conf and
+/etc/services have to be changed), you have to install the software
+yourself for now (read the file INSTALL.TXT in the source archive!).
+
+I'm not providing a binary archive, since backupd is a really simple
+program and it's naked C (no C++) this time, so compiling should be
+straight forward.
+
+In addition to the source archive (which will produce the backup client
+and server executables for Linux), there are two archives that contain
+client executables for Windows (NT and 95) and OS/2. These archives do
+also contain a tar port for the operating system, so, with the exception
+of Windows 95, you do not need any other software to do backups.
+
+Regarding Win95: There's a problem with Windows 95 that needs another
+program to work around it: the MS-DOS prompt under Win95 is not able to
+do real pipes (it uses intermediate files like in plain old DOS), so you
+have to use a replacement for COMMAND.COM. I recommend the tcsh port from
+
+    ftp://ftp.blarg.net/users/amol/tcsh/
+
+The README says it's an NT port, but it works great under Win95 as far as
+I can tell. Get it and use
+
+    tcsh -c "backupc -h backupdhost -r tape0 | tar -xvpf -"
+
+instead of the syntax described elsewhere in this document. Note: You do
+*not* need tcsh when using Windows NT.
+
+I'll try to provide more perfect client binary archives (containing all
+you need, not less and not more) in the future.
+
+    backupd-0.20.1-src.tar.gz         Source archive
+    backupc-0.20.1-os2.zip            Client binary + gtar for OS/2
+    backupc-0.20.1-win32.zip          Client binary + gtar for NT/Win95
+
+    pkg/unix95.7.zip                  More Unix like utils for Win32
+    pkg/gtar258.zip                   gtar for OS/2 with source (this port
+                                      was done by Andreas Kaiser)
+
+

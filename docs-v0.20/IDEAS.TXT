@@ -1,0 +1,22 @@
+
+Ideas for extensions of backupd:
+
+  * If the server had an option to do blocking and write to a file
+    directly, it could access tape devices without piping through
+    /bin/dd, freeing up some resources.
+
+  * Have some more commands, like "DIR" to get a directory of a
+    resource. In this case, server and client have to agree about
+    the format of the data, of course.
+
+  * Have a more flexible command interface. Instead of doing "-w
+    resource" to write a resource, or "-r resource" respectively, allow
+    something like -c "NEWCMD resource". The server will then look
+    for a command NEWCMD in the config file and execute it.
+
+  * Have parameters for the commands allowing for some options.
+
+
+If you have more ideas, send me a mail! But please keep in mind, that
+the beauty of backupd is its simplicity, and this should not change.
+

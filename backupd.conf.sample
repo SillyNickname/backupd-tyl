@@ -1,0 +1,127 @@
+#
+# Sample configuration file for backupd-tyl (Backupd - Thirty Years Later)
+#
+# (C) 2026 Antigravity / Gemini (Google DeepMind)
+# Based on original backupd by Ullrich von Bassewitz (1998)
+# [Note: original author email uz@musoftware.de is no longer active]
+# Requested and Commissioned by: Andre Kajita (kajita@univap.br)
+#
+
+# -------------------------------------------------------------------------
+# GLOBAL SERVER OPTIONS
+# Options specified before the first resource section [section_name]
+# -------------------------------------------------------------------------
+
+# TCP port to listen on in standalone daemon mode (default: 12153)
+Port = 12153
+
+# IP address or interface to bind to (default: 0.0.0.0 for all interfaces)
+BindAddress = "0.0.0.0"
+
+# Path to daemon PID file
+PidFile = "/var/run/backupd-tyl.pid"
+
+# Default AEAD cipher suite for encrypted client connections:
+# "ascon"     - ASCON-128a (NIST Lightweight standard, lowest CPU footprint, default)
+# "speck"     - Speck-128/128 with Poly1305 authenticator (lightweight block cipher)
+# "chacha20"  - ChaCha20-Poly1305 (RFC 8439 high security standard)
+# "xchacha20" - XChaCha20-Poly1305 (192-bit extended nonce for massive stream backups)
+# "aes256"    - AES-256-GCM (NIST SP 800-38D, TLS 1.3, hardware/EVP accelerated)
+# "aes128"    - AES-128-GCM (NIST SP 800-38D, TLS 1.3, hardware/EVP accelerated)
+DefaultCipher = "ascon"
+
+# Logging Destination & Systems:
+# "syslog" - System logging via vsyslog (compatible with rsyslogd, syslog-ng, systemd-journald)
+# "file"   - Direct append to dedicated log file with timestamp & PID formatting
+# "stderr" - Standard error output (ideal for container supervisor / foreground debugging)
+LogTarget = "syslog"
+
+# Dedicated log file path (used when LogTarget = "file")
+# Sending SIGHUP to backupd reopens this file, allowing seamless logrotate operation.
+LogFile = "/var/log/backupd-tyl.log"
+
+# Logging verbosity level threshold:
+# "debug"   - Verbose protocol tracing and frame-level crypto operations
+# "info"    - General connection handling, commands executed, transfer sizes
+# "notice"  - Service startup, shutdown, and configuration reloads (SIGHUP)
+# "warn"    - Authentication failures, access denials, and socket disconnects
+# "err"     - Fatal or command execution errors
+LogLevel = "info"
+
+# Syslog facility when LogTarget = "syslog":
+# "daemon" (default), "local0" .. "local7", "auth", "user", or numeric value
+LogFacility = "daemon"
+
+# Backward compatibility with unencrypted 1998 v0.20 client/protocol (yes/no)
+# When set to 'no', any unencrypted v0.20 connection attempts will be rejected.
+AllowLegacy = no
+
+# Disable reverse DNS lookups for connecting clients (speeds up access checks)
+# NoDNS = 1
+
+# Global access list for the 'LIST' command.
+# Local command sections can override this with their own ListAllow/ListDeny.
+ListAllow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
+ListDeny  = "*"
+
+
+# -------------------------------------------------------------------------
+# RESOURCE DEFINITIONS
+# -------------------------------------------------------------------------
+
+# 1. Zstandard Compressed Tar Archive Streaming
+# Demonstrates fast modern parallel compression (zstd) directly to storage.
+[system-archive]
+user     = "backup"
+group    = "backup"
+lockfile = "/var/lock/backupd-system-archive.lock"
+# Pre-crypto shared password required before ephemeral TLS-style handshake
+password = "ChangeThisToAStrongSharedSecret!"
+write    = "zstd -T0 -3 > /var/backups/hosts/%h/%H-%d.tar.zst"
+read     = "zstd -d -c /var/backups/hosts/%h/latest.tar.zst"
+ListAllow = "192.168.1.0/24"
+ListDeny  = "*"
+
+# 2. Multi-line Command Script with Pipeline Processing
+# Demonstrates backslash line continuation and Unix pipelines.
+[database-pg]
+user     = "postgres"
+group    = "postgres"
+password = "DatabaseBackupVaultKey#2026"
+write    = "zstd -d | \
+            pg_restore --clean --if-exists -d production_db"
+read     = "pg_dump -Fc production_db | \
+            zstd -T0 -4"
+ListAllow = "10.0.0.0/8 127.0.0.1/32"
+ListDeny  = "*"
+
+# 3. Block-script syntax for multi-step tasks
+# Multi-line commands can also be grouped inside curly brace blocks.
+[verify-and-store]
+user     = "backup"
+group    = "backup"
+write    = {
+    TMPFILE=$(mktemp /tmp/backup-ingest.XXXXXX)
+    cat > "$TMPFILE"
+    sha256sum "$TMPFILE" >> /var/backups/checksums.log
+    mv "$TMPFILE" /var/backups/incoming/archive-$(date +%s).dat
+}
+read     = "cat /var/backups/checksums.log"
+
+# 4. Hidden Administrative Resource
+# Using local ListDeny to hide this resource from discovery in 'backupc -l',
+# while keeping it directly accessible by authorized hosts with password.
+[admin-maintenance]
+password  = "SuperSecretAdminKey"
+ListDeny  = "*"
+write     = "/usr/local/sbin/backup-maintenance-hook"
+read      = "/bin/uptime"
+
+# 5. Traditional LTO Tape Drive (Modernized dd block size)
+[tape0]
+lockfile = "/var/lock/backupd-tape0.lock"
+write    = "dd of=/dev/nst0 bs=256k"
+read     = "dd if=/dev/nst0 bs=256k"
+password = "TapeVaultAccessKey"
+ListAllow = "10.10.10.0/24"
+ListDeny  = "*"

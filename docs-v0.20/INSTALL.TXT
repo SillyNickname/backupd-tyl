@@ -1,0 +1,55 @@
+
+Notes on installing backupd
+---------------------------
+
+Vesion 0.20 has an install target for the makefile that will change 
+/etc/inetd.conf and /etc/services. However, you should check these
+files after install has completed. Backup copies will be put into
+the /tmp direcory.
+
+Step-by-step instructions:
+
+1. Unpack the sources.
+
+2. Change the PREFIX variable in the makefile to suit your taste
+   (the default is /usr, you may want to change this to /usr/local).
+
+3. Log in as root and do a "make install". Be sure to have a quick
+   look at /etc/services and /etc/inetd.conf. If these files didn't
+   contain references to backupd, there will be a line added at the
+   end with the needed statements.
+
+4. Edit your /etc/backupd.conf ("make install" will create an empty
+   file if needed). See BACKUPD.DOC for examples.
+
+5. Adjust /etc/hosts.deny and/or /hosts.allow if needed.
+
+
+That's it! If you want to test the server, try the following:
+
+Add a test entry to /etc/backupd.conf (remember to remove it after the
+test):
+
+    [test]
+    user     = "nobody"
+    group    = "nobody"
+    write    = "cat > /tmp/backupd-test"
+    read     = "cat /tmp/backupd-test"
+    lockfile = "/tmp/backupd-test.lock"
+
+Do a backup of some text file:
+
+    cat /etc/services | backupc -w test
+
+Check /var/log/messages for any error messages.
+
+Get the file back and compare it to the original:
+
+    backupc -r test > /tmp/test.out
+    diff /etc/services /tmp/test.out
+
+If diff doesn't give you any output, and there are no error messages,
+you're done. Congratulations!
+
+
+					  

@@ -1,0 +1,42 @@
+
+
+
+
+0.20.2 - 17.07.1998
+
+  - Small change in backupc.c (one more include file) should make the 
+    sources compile under RH4.2 (thanks to Bob Dalley <bdalley@ibm.net>
+    for the help).
+
+
+
+0.20.1 - 31.06.1998
+
+  - Global options in the config file.
+
+  - New command to list the available resources, plus listallow and
+    listdeny commands.
+
+  - Host based resource access control (allow/deny lists in the config
+    file).
+
+  - Fixed some minor bugs and restructured the sources.
+
+  - Added an install target to the makefile.
+
+  - Rewrote code for execution of external commands. stderr for commands
+    is now by default connected to /dev/null.
+
+  - NoDNS options to avoid host name resolution on systems that are
+    connected to the internet by a dialup connection.
+
+  - Do some security related stuff when starting backupd.
+
+
+
+0.10.2 - 30.06.1998
+
+  - Replaced the call to h_strerror which is available only on glibc2
+    systems with handcrafted code. Thanks to Andrey V Khavryutchenko
+    <akhavr@ksf.kiev.ua>.
+

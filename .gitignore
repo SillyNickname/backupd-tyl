@@ -1,0 +1,9 @@
+*.o
+/backupd
+/backupc
+test_runner
+.depend
+*.dat
+*.pid
+!bin/backupd
+!bin/backupc
