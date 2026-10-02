@@ -313,8 +313,8 @@ for ex in "$REPO_DIR"/examples/*.conf; do
 done
 echo "   [PASS] All example configuration files validated successfully with -C"
 
-# 14. Testing Global and Resource Allow/Deny Inheritance & Override
-echo "14. Testing Global and Resource Allow/Deny Inheritance & Override..."
+# 14. Testing Global and Resource Allow/Deny Inheritance & Precedence
+echo "14. Testing Global and Resource Allow/Deny Inheritance & Precedence..."
 ACL_CONF="$TMP_DIR/acl_test.conf"
 ACL_PORT=$((TEST_PORT + 1))
 cat << EOF > "$ACL_CONF"
@@ -324,13 +324,21 @@ LogTarget = stderr
 Allow = "127.0.0.0/8"
 Deny  = "*"
 
-[test-resource-override-deny]
-# Overrides global Deny (*) with specific block (10.10.0.0/16), inherits global Allow (127.0.0.0/8)
-Deny = "10.10.0.0/16"
-read = "echo user-override-success"
+[test-allow-precedence-over-deny]
+# Inherits global Allow (127.0.0.0/8) and global Deny (*).
+# Allow has precedence over Deny (*): 127.0.0.0/8 allowed before denying other traffic.
+read = "echo precedence-allow-success"
 
-[test-resource-blocked-by-global-deny]
-# No allow or deny -> inherits global Allow (127.0.0.0/8) AND global Deny (*) -> blocked!
+[test-resource-specific-deny]
+# Inherits global Allow (127.0.0.0/8), but specifies Deny = 127.0.0.1/32.
+# Specific Deny (/32) overrides broader Allow (/8).
+Deny = "127.0.0.1/32"
+read = "echo should-never-run"
+
+[test-resource-unmatched-allow]
+# Overrides Allow with 10.0.0.0/8. Client is 127.0.0.1 (not in 10.0.0.0/8) -> blocked.
+Allow = "10.0.0.0/8"
+Deny  = "*"
 read = "echo should-never-run"
 EOF
 
@@ -338,26 +346,38 @@ EOF
 sleep 0.4
 ACL_PID="$(cat "$TMP_DIR/acl.pid" 2>/dev/null || true)"
 
-# 1. Resource with Deny override should be ALLOWED because local Deny replaces global Deny (*)
-ACL_OUT="$("$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-resource-override-deny 2>/dev/null || true)"
-if [ "$ACL_OUT" != "user-override-success" ]; then
-    echo "FAILED: Resource override of global Deny failed: got '$ACL_OUT'"
+# 1. Allow has precedence over Deny (*): 127.0.0.1 in 127.0.0.0/8 must succeed
+ACL_OUT="$("$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-allow-precedence-over-deny 2>/dev/null || true)"
+if [ "$ACL_OUT" != "precedence-allow-success" ]; then
+    echo "FAILED: Allow did not take precedence over Deny (*): got '$ACL_OUT'"
     kill -9 "$ACL_PID" 2>/dev/null || true
     exit 1
 fi
-echo "   [PASS] Resource Deny override successfully replaced global Deny (*)"
+echo "   [PASS] Allow took precedence over Deny (*)"
 
-# 2. Resource without Deny override should be BLOCKED because it inherits global Deny (*)
+# 2. Specific Deny (127.0.0.1/32) overrides broader Allow (127.0.0.0/8)
 set +e
-"$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-resource-blocked-by-global-deny >/dev/null 2>&1
+"$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-resource-specific-deny >/dev/null 2>&1
 ACL_EC=$?
 set -e
 if [ $ACL_EC -eq 0 ]; then
-    echo "FAILED: Resource without Deny override was not blocked by global Deny (*)"
+    echo "FAILED: Specific Deny (/32) was not enforced over broader Allow (/8)"
     kill -9 "$ACL_PID" 2>/dev/null || true
     exit 1
 fi
-echo "   [PASS] Resource without Deny override properly inherited global Deny (*)"
+echo "   [PASS] Specific Deny (/32) successfully blocked client despite broader Allow (/8)"
+
+# 3. Client not in Allow list is blocked by Deny (*)
+set +e
+"$BACKUPC" -h 127.0.0.1 -p "$ACL_PORT" -r test-resource-unmatched-allow >/dev/null 2>&1
+ACL_EC=$?
+set -e
+if [ $ACL_EC -eq 0 ]; then
+    echo "FAILED: Client not in Allow list was not blocked"
+    kill -9 "$ACL_PID" 2>/dev/null || true
+    exit 1
+fi
+echo "   [PASS] Client outside Allow list was properly denied"
 
 kill "$ACL_PID" 2>/dev/null || true
 rm -f "$TMP_DIR/acl.pid" "$ACL_CONF"

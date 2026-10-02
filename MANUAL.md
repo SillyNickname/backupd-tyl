@@ -638,11 +638,17 @@ Access lists support:
 - Hostnames or DNS wildcards: `*.local`, `host.domain.com`
 - Universal wildcard: `*`
 
-#### Resource Inheritance & Override Rules:
+#### Resource Inheritance & Precedence Rules:
 A single global `Allow` and `Deny` filter controls client authorization and discovery. Resource-level `Allow` and `Deny` directives override the global rules:
 - If a resource defines `Allow`, it replaces the global `Allow`.
 - If a resource defines `Deny`, it replaces the global `Deny`.
 - If a resource omits either directive, the corresponding global directive is inherited automatically.
+
+#### Evaluation Order & Specificity:
+1. **Allow takes precedence over Deny**: When both `Allow` and `Deny` are configured, traffic matching an explicit `Allow` rule is permitted before denying other traffic. For example, with `Allow = "10.0.0.0/8"` and `Deny = "*"`, all traffic from `10.0.0.0/8` is allowed, while all other traffic is denied by `*`.
+2. **Subnet Specificity**: A more specific subnet rule (higher CIDR bitmask) takes precedence over a broader network. For example, `Deny = "10.10.0.0/16"` (/16) overrides a broader `Allow = "10.0.0.0/8"` (/8), permitting `10.0.0.0/8` while carving out `10.10.0.0/16` as an exclusion.
+3. **Equal Specificity**: When an `Allow` and `Deny` rule match with equal specificity, `Allow` takes precedence.
+4. **Whitelist Behavior**: When `Allow` is defined, clients that do not match `Allow` are denied.
 
 For example, to inherit a global `Allow = "10.0.0.0/8"` but restrict access on a resource by denying `10.10.0.0/16`:
 ```ini

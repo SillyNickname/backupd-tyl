@@ -90,8 +90,6 @@ void getclient (void) {
     getclient_from_sock (fileno(stdin));
 }
 
-extern int host_in_list (const char* list_str, const char* client_name, unsigned long client_addr);
-
 int clientaccess (const char* res) {
     const CfgGlobal* g = CfgGetGlobal ();
     const CfgSection* s = (res && res[0] != '\0') ? CfgGetSection (res) : NULL;
@@ -108,14 +106,7 @@ int clientaccess (const char* res) {
     const char* eff_allow = (s && s->allow) ? s->allow : (g ? g->allow : NULL);
     const char* eff_deny  = (s && s->deny)  ? s->deny  : (g ? g->deny  : NULL);
 
-    if (eff_allow && !host_in_list (eff_allow, clientname, clientaddr)) {
-        return NO;
-    }
-    if (eff_deny && host_in_list (eff_deny, clientname, clientaddr)) {
-        return NO;
-    }
-
-    return YES;
+    return check_client_acl (eff_allow, eff_deny, clientname, clientaddr);
 }
 
 int client_check_auth (const char* res, const char* provided_password) {

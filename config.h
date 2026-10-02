@@ -62,6 +62,11 @@ int               CfgHaveSection (const char* section);
 /* Section listing considering resource Allow/Deny with global inheritance */
 unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsigned long client_addr);
 
+/* ACL evaluation: Allow takes precedence over Deny */
+int get_host_match_specificity (const char* list_str, const char* client_name, unsigned long client_addr);
+int check_client_acl (const char* allow_str, const char* deny_str, const char* client_name, unsigned long client_addr);
+int host_in_list (const char* list_str, const char* client_name, unsigned long client_addr);
+
 /* Legacy helper functions for backward compatibility */
 int CfgGetInt (const char* Section, const char* Entry, long DefVal, long* Val);
 int CfgGetStr (const char* Section, const char* Entry, const char* DefVal, char* Str, unsigned StrSize);

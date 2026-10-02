@@ -172,16 +172,20 @@ static int parse_log_level (const char* str) {
     return TYL_LOG_INFO;
 }
 
-int host_in_list (const char* list_str, const char* client_name, unsigned long client_addr) {
-    if (!list_str || list_str[0] == '\0') return NO;
+int get_host_match_specificity (const char* list_str, const char* client_name, unsigned long client_addr) {
+    if (!list_str || list_str[0] == '\0') return -1;
     char* buf = strdup (list_str);
-    if (!buf) return NO;
+    if (!buf) return -1;
 
-    int match = NO;
+    int max_spec = -1;
     char* saveptr = NULL;
     char* tok = strtok_r (buf, " \t,", &saveptr);
     while (tok) {
-        if (isdigit ((unsigned char)tok[0])) {
+        if (strcmp (tok, "*") == 0) {
+            if (max_spec < 0) {
+                max_spec = 0;
+            }
+        } else if (isdigit ((unsigned char)tok[0])) {
             unsigned q1 = 0, q2 = 0, q3 = 0, q4 = 0, bits = 32;
             int n = sscanf (tok, "%u.%u.%u.%u/%u", &q1, &q2, &q3, &q4, &bits);
             if (n >= 4 && q1 <= 255 && q2 <= 255 && q3 <= 255 && q4 <= 255 && bits <= 32) {
@@ -191,20 +195,68 @@ int host_in_list (const char* list_str, const char* client_name, unsigned long c
                                    ((unsigned long)q4);
                 unsigned long mask = (bits == 0) ? 0 : (~0UL << (32 - bits));
                 if ((ip & mask) == (client_addr & mask)) {
-                    match = YES;
-                    break;
+                    int spec = (int)bits;
+                    if (spec > max_spec) {
+                        max_spec = spec;
+                    }
                 }
             }
         } else {
             if (client_name && fnmatch (tok, client_name, 0) == 0) {
-                match = YES;
-                break;
+                int spec = 32;
+                if (strchr (tok, '*') || strchr (tok, '?')) {
+                    int literals = 0;
+                    const char* p = tok;
+                    while (*p) {
+                        if (*p != '*' && *p != '?') literals++;
+                        p++;
+                    }
+                    spec = (literals > 31) ? 31 : (literals > 0 ? literals : 1);
+                }
+                if (spec > max_spec) {
+                    max_spec = spec;
+                }
             }
         }
         tok = strtok_r (NULL, " \t,", &saveptr);
     }
     free (buf);
-    return match;
+    return max_spec;
+}
+
+int host_in_list (const char* list_str, const char* client_name, unsigned long client_addr) {
+    return (get_host_match_specificity (list_str, client_name, client_addr) >= 0) ? YES : NO;
+}
+
+int check_client_acl (const char* allow_str, const char* deny_str, const char* client_name, unsigned long client_addr) {
+    int has_allow = (allow_str && allow_str[0] != '\0');
+    int has_deny  = (deny_str  && deny_str[0]  != '\0');
+
+    if (!has_allow && !has_deny) {
+        return YES;
+    }
+
+    int allow_spec = has_allow ? get_host_match_specificity (allow_str, client_name, client_addr) : -1;
+    int deny_spec  = has_deny  ? get_host_match_specificity (deny_str,  client_name, client_addr) : -1;
+
+    if (has_allow) {
+        /*
+         * Allow has precedence over Deny:
+         * If the client matches Allow and the Allow rule is at least as specific
+         * as any matching Deny rule (e.g. Allow = 10.0.0.0/8 over Deny = *),
+         * access is granted before denying other traffic.
+         */
+        if (allow_spec >= 0 && allow_spec >= deny_spec) {
+            return YES;
+        }
+        return NO;
+    }
+
+    /* Only Deny is configured */
+    if (deny_spec >= 0) {
+        return NO;
+    }
+    return YES;
 }
 
 unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsigned long client_addr) {
@@ -220,15 +272,7 @@ unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsign
         const char* eff_allow = s->allow ? s->allow : global_cfg.allow;
         const char* eff_deny  = s->deny  ? s->deny  : global_cfg.deny;
 
-        int allowed = YES;
-        if (eff_allow && !host_in_list (eff_allow, client_name, client_addr)) {
-            allowed = NO;
-        }
-        if (eff_deny && host_in_list (eff_deny, client_name, client_addr)) {
-            allowed = NO;
-        }
-
-        if (allowed) {
+        if (check_client_acl (eff_allow, eff_deny, client_name, client_addr) == YES) {
             int n = fprintf (F, "-%s\n", s->name);
             if (n > 0) bytes += (unsigned long)n;
         }
