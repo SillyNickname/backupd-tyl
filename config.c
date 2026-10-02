@@ -172,6 +172,21 @@ static int parse_log_level (const char* str) {
     return TYL_LOG_INFO;
 }
 
+/*
+ * get_host_match_specificity:
+ * Evaluates how specifically a given client matches a whitespace- or comma-separated
+ * rule list (e.g. "10.0.0.0/8, 192.168.1.5, *.corp.example.com, *").
+ *
+ * Scoring system (higher number = more specific match):
+ * - Unmatched: -1
+ * - Universal wildcard ("*"): 0
+ * - Subnet / CIDR mask (e.g. /8, /16, /24): prefix bit length (1..32)
+ *   * Single host IPv4 (e.g. 192.168.1.5 without prefix defaults to /32): 32
+ * - Hostname with wildcards (*, ?): number of literal non-wildcard chars (1..31)
+ * - Exact hostname: 32
+ *
+ * When multiple patterns in the same list match, the highest specificity is returned.
+ */
 int get_host_match_specificity (const char* list_str, const char* client_name, unsigned long client_addr) {
     if (!list_str || list_str[0] == '\0') return -1;
     char* buf = strdup (list_str);
@@ -186,6 +201,7 @@ int get_host_match_specificity (const char* list_str, const char* client_name, u
                 max_spec = 0;
             }
         } else if (isdigit ((unsigned char)tok[0])) {
+            /* IPv4 address or CIDR subnet: parse octets and optional /bits */
             unsigned q1 = 0, q2 = 0, q3 = 0, q4 = 0, bits = 32;
             int n = sscanf (tok, "%u.%u.%u.%u/%u", &q1, &q2, &q3, &q4, &bits);
             if (n >= 4 && q1 <= 255 && q2 <= 255 && q3 <= 255 && q4 <= 255 && bits <= 32) {
@@ -193,6 +209,7 @@ int get_host_match_specificity (const char* list_str, const char* client_name, u
                                    ((unsigned long)q2 << 16) |
                                    ((unsigned long)q3 << 8)  |
                                    ((unsigned long)q4);
+                /* Build netmask bitmask for CIDR comparison */
                 unsigned long mask = (bits == 0) ? 0 : (~0UL << (32 - bits));
                 if ((ip & mask) == (client_addr & mask)) {
                     int spec = (int)bits;
@@ -202,6 +219,7 @@ int get_host_match_specificity (const char* list_str, const char* client_name, u
                 }
             }
         } else {
+            /* Hostname pattern matching with fnmatch */
             if (client_name && fnmatch (tok, client_name, 0) == 0) {
                 int spec = 32;
                 if (strchr (tok, '*') || strchr (tok, '?')) {
@@ -228,6 +246,22 @@ int host_in_list (const char* list_str, const char* client_name, unsigned long c
     return (get_host_match_specificity (list_str, client_name, client_addr) >= 0) ? YES : NO;
 }
 
+/*
+ * check_client_acl:
+ * Core authorization engine enforcing the unified Allow / Deny security model.
+ *
+ * Precedence semantics:
+ * 1. If neither Allow nor Deny is configured, access is permitted (default open).
+ * 2. If only Allow is configured, only matching clients are permitted.
+ * 3. If only Deny is configured, matching clients are blocked, all others permitted.
+ * 4. When BOTH Allow and Deny are configured:
+ *    - Allow takes precedence over Deny:
+ *      If the client matches Allow, and the Allow rule's specificity is >= the
+ *      matching Deny rule's specificity (e.g. Allow = 10.0.0.0/8 [spec=8] over
+ *      Deny = * [spec=0]), access is granted.
+ *    - If Deny is strictly more specific (e.g. Allow = 10.0.0.0/8 [spec=8] with
+ *      Deny = 10.10.0.0/16 [spec=16]), the more specific Deny blocks the subnet.
+ */
 int check_client_acl (const char* allow_str, const char* deny_str, const char* client_name, unsigned long client_addr) {
     int has_allow = (allow_str && allow_str[0] != '\0');
     int has_deny  = (deny_str  && deny_str[0]  != '\0');
@@ -259,6 +293,12 @@ int check_client_acl (const char* allow_str, const char* deny_str, const char* c
     return YES;
 }
 
+/*
+ * CfgListSectionsForClient:
+ * Outputs the list of configured resources available to the authenticated client.
+ * For each resource section, evaluates local Allow/Deny (or global fallback).
+ * Resources not accessible to the client are omitted from the output.
+ */
 unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsigned long client_addr) {
     unsigned long bytes = 0;
     CfgSection* s = section_list;
@@ -279,10 +319,6 @@ unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsign
         s = s->next;
     }
     return bytes;
-}
-
-unsigned long CfgListSections (FILE* F) {
-    return CfgListSectionsForClient (F, NULL, 0);
 }
 
 int CfgInit (void) {
@@ -458,69 +494,4 @@ int CfgInit (void) {
 
     fclose (fp);
     return SUCCESS;
-}
-
-int CfgGetInt (const char* Section, const char* Entry, long DefVal, long* Val) {
-    if (!Val) return FAILURE;
-    *Val = DefVal;
-    if (!Section || Section[0] == '\0') {
-        if (strcasecmp (Entry, "nodns") == 0) {
-            *Val = global_cfg.nodns;
-            return SUCCESS;
-        } else if (strcasecmp (Entry, "logfacility") == 0) {
-            *Val = global_cfg.log_facility;
-            return SUCCESS;
-        } else if (strcasecmp (Entry, "port") == 0) {
-            *Val = global_cfg.port;
-            return SUCCESS;
-        }
-    } else {
-        const CfgSection* s = CfgGetSection (Section);
-        if (s && strcasecmp (Entry, "umask") == 0 && s->has_umask) {
-            *Val = s->umask_val;
-            return SUCCESS;
-        }
-    }
-    return FAILURE;
-}
-
-int CfgGetStr (const char* Section, const char* Entry, const char* DefVal, char* Str, unsigned StrSize) {
-    if (!Str || StrSize == 0) return FAILURE;
-    if (DefVal) {
-        StrNCopy (Str, DefVal, StrSize);
-    } else {
-        Str[0] = '\0';
-    }
-
-    if (!Section || Section[0] == '\0') {
-        if (strcasecmp (Entry, "allow") == 0 && global_cfg.allow) {
-            StrNCopy (Str, global_cfg.allow, StrSize);
-            return SUCCESS;
-        } else if (strcasecmp (Entry, "deny") == 0 && global_cfg.deny) {
-            StrNCopy (Str, global_cfg.deny, StrSize);
-            return SUCCESS;
-        } else if (strcasecmp (Entry, "password") == 0 && global_cfg.password) {
-            StrNCopy (Str, global_cfg.password, StrSize);
-            return SUCCESS;
-        }
-    } else {
-        const CfgSection* s = CfgGetSection (Section);
-        if (s) {
-            const char* val = NULL;
-            if (strcasecmp (Entry, "user") == 0) val = s->user;
-            else if (strcasecmp (Entry, "group") == 0) val = s->group;
-            else if (strcasecmp (Entry, "password") == 0) val = s->password;
-            else if (strcasecmp (Entry, "write") == 0) val = s->write_cmd;
-            else if (strcasecmp (Entry, "read") == 0) val = s->read_cmd;
-            else if (strcasecmp (Entry, "lockfile") == 0) val = s->lockfile;
-            else if (strcasecmp (Entry, "allow") == 0) val = s->allow ? s->allow : global_cfg.allow;
-            else if (strcasecmp (Entry, "deny") == 0) val = s->deny ? s->deny : global_cfg.deny;
-
-            if (val) {
-                StrNCopy (Str, val, StrSize);
-                return SUCCESS;
-            }
-        }
-    }
-    return FAILURE;
 }

@@ -224,7 +224,22 @@ static int srvconnect (void) {
     return s;
 }
 
-/* Modern TYL/1.0 Client Negotiation */
+/*
+ * modern_handshake:
+ * Executes the client-side cryptographic negotiation state machine:
+ *
+ * Step 1: Connects TCP socket to server:port and sends cleartext HELLO with
+ *         command, resource, authentication token, and supported ciphers.
+ * Step 2: Reads server response; expects KEY with server's ephemeral Curve25519
+ *         public key and chosen cipher suite.
+ * Step 3: Generates client ephemeral Curve25519 keypair and performs X25519 ECDH.
+ *         Runs HKDF-SHA256 over shared secret to generate unidirectional TX/RX
+ *         keys and nonces.
+ * Step 4: Transmits client public key to server.
+ * Step 5: Sends encrypted AEAD frame containing TYL_FIN_TOKEN ("FINISHED").
+ * Step 6: Awaits server encrypted confirmation (TYL_OK_TOKEN).
+ * Step 7: Awaits initial command acknowledgment before beginning encrypted I/O.
+ */
 static int modern_handshake (tyl_session_t* session, const char* cmd, const char* res) {
     log_negotiation ("Initiating connection to %s:%u (cmd=%s, res='%s')",
                      servername, serverport, cmd, res ? res : "");

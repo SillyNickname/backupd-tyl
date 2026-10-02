@@ -29,44 +29,10 @@
 #include "const.h"
 #include "util.h"
 
-static const char FileSysPathSep = '/';
-
-char* AddPathSep (char* Dir) {
-    unsigned Len = strlen (Dir);
-    if (Len == 0 || Dir [Len-1] != FileSysPathSep) {
-        Dir [Len]   = FileSysPathSep;
-        Dir [Len+1] = '\0';
-    }
-    return Dir;
-}
-
-char* DelPathSep (char* Path) {
-    unsigned Len = strlen (Path);
-    while (Len > 0 && Path [Len-1] == FileSysPathSep) {
-        Path [--Len] = '\0';
-    }
-    return Path;
-}
-
-char* DirCat (char* Path, size_t PathSize, const char* NewElement) {
-    AddPathSep (Path);
-    while (*NewElement == FileSysPathSep) {
-        NewElement++;
-    }
-    size_t cur_len = strlen(Path);
-    if (cur_len + strlen(NewElement) < PathSize) {
-        strncat(Path, NewElement, PathSize - cur_len - 1);
-    }
-    return Path;
-}
-
-int IsDir (const char* Path) {
-    struct stat Buf;
-    char TmpBuf [PATH_MAX+1];
-    DelPathSep (StrNCopy (TmpBuf, Path, sizeof (TmpBuf)));
-    return (stat (TmpBuf, &Buf) == 0 && S_ISDIR (Buf.st_mode));
-}
-
+/*
+ * Safe bounded string copy: ensures NUL-termination under all conditions,
+ * avoiding truncation vulnerabilities and buffer overruns.
+ */
 char* StrNCopy (char* Dest, const char* Src, size_t Size) {
     if (!Dest || Size == 0) return Dest;
     if (!Src) {
@@ -80,18 +46,6 @@ char* StrNCopy (char* Dest, const char* Src, size_t Size) {
     }
     Dest[i] = '\0';
     return Dest;
-}
-
-int IsReadable (const char* Path) {
-    return (access (Path, R_OK) == 0);
-}
-
-int IsAbsolute (const char* Path) {
-    if (!Path || Path[0] == '\0') return NO;
-    if (Path[0] == '/') return YES;
-    if (Path[0] == '\\') return YES;
-    if (strlen(Path) > 2 && Path[1] == ':' && (Path[2] == '/' || Path[2] == '\\')) return YES;
-    return NO;
 }
 
 int validfilechar (int c) {

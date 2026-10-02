@@ -36,6 +36,7 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
 
 #include "const.h"
 #include "proto.h"
@@ -43,7 +44,6 @@
 #include "config.h"
 #include "error.h"
 #include "util.h"
-#include "sig.h"
 #include "client.h"
 #include "extcmd.h"
 #include "crypto/tyl_crypto.h"
@@ -61,6 +61,10 @@ static int master_socket = -1;
 static char active_pidfile [PATH_MAX] = "";
 static volatile sig_atomic_t got_sighup = 0;
 
+/*
+ * rmlock: Removes any active lockfile previously acquired by makelock().
+ * Called during clean exit, signal termination, and command completion.
+ */
 static void rmlock (void) {
     if (lockfile[0] != '\0') {
         if (remove (lockfile) < 0 && errno != ENOENT) {
@@ -87,6 +91,14 @@ static void doexit (void) {
     tyl_log_close ();
 }
 
+/*
+ * setup_security:
+ * Initializes baseline process environment hardening:
+ * 1. Sets a strict umask (0077) to ensure any files created by the daemon
+ *    are inaccessible to other local users by default.
+ * 2. Overwrites PATH with a sanitized, immutable system search path
+ *    to prevent PATH hijacking vulnerabilities during external command execution.
+ */
 static void setup_security (void) {
     char envbuf [256];
     umask (0077);
@@ -98,6 +110,21 @@ static void setup_security (void) {
     }
 }
 
+/*
+ * changeuser:
+ * Implements strict, irreversible privilege separation for resource execution:
+ *
+ * 1. Looks up the requested target user and group from the resource configuration.
+ * 2. If the daemon is running as root (euid == 0):
+ *    - Resolves target UID and GID.
+ *    - Calls initgroups() to properly configure supplementary groups for the user.
+ *    - Permanently switches group identity (setgid).
+ *    - Permanently drops root user privileges (setuid).
+ *    - Defense-in-depth: attempts to regain root via setuid(0) / seteuid(0);
+ *      if successful, terminates immediately to prevent running with dropped credentials failed.
+ * 3. If running unprivileged (e.g. non-root container or test suite), verifies that the
+ *    current effective UID matches the requested target user.
+ */
 static void changeuser (const char* section) {
     const CfgSection* s = CfgGetSection (section);
     if (!s) return;
@@ -184,6 +211,11 @@ static void changeuser (const char* section) {
     }
 }
 
+/*
+ * makelock: Creates a mutual-exclusion lockfile for the specified resource.
+ * Uses atomic open(O_CREAT | O_EXCL) to prevent race conditions when multiple
+ * clients attempt to access the same resource simultaneously.
+ */
 static int makelock (const char* res) {
     const CfgSection* s = CfgGetSection (res);
     if (!s || !s->lockfile || s->lockfile[0] == '\0') {
@@ -258,7 +290,38 @@ static const char* parse_param (const char* line, const char* key, char* val_buf
     return val_buf;
 }
 
-/* Modern TYL/1.0 encrypted connection handler */
+/*
+ * handle_modern_connection:
+ * Manages modern TYL/1.0 encrypted sessions through a 4-phase security pipeline:
+ *
+ * Phase 1: Pre-Crypto Authentication & Access Control
+ *   - Parses initial client request line containing requested command, resource,
+ *     proposed ciphers, and pre-auth password token.
+ *   - Evaluates client credentials against resource-specific or global passwords
+ *     using constant-time verification.
+ *   - Enforces IP/hostname Allow/Deny ACLs before allocating crypto state.
+ *
+ * Phase 2: Ephemeral Diffie-Hellman Key Exchange (X25519)
+ *   - Generates ephemeral Curve25519 keypair for the worker process.
+ *   - Sends server public key and selected AEAD cipher suite to client.
+ *   - Receives client ephemeral public key.
+ *   - Computes 32-byte shared secret via X25519 scalar multiplication.
+ *   - Feeds shared secret into HKDF-SHA256 to derive forward-secure unidirectional
+ *     session keys (client->server and server->client) and IV/nonces.
+ *
+ * Phase 3: Cryptographic Handshake Verification
+ *   - Awaits encrypted AEAD frame containing TYL_FIN_TOKEN ("FINISHED").
+ *   - Decrypts and authenticates frame using derived session key.
+ *   - Acknowledges readiness with encrypted TYL_OK_TOKEN ("OK").
+ *
+ * Phase 4: Authenticated Streaming & External Command Supervision
+ *   - Transitions process to dropped privileges (changeuser) and sets custom umask.
+ *   - Acquires resource lock (makelock).
+ *   - Forks external shell command with isolated descriptors (startcmd).
+ *   - Bidirectionally relays data through AEAD frames (each packet length-prefixed,
+ *     encrypted, and authenticated with a 16-byte Poly1305 or GCM tag).
+ *   - Awaits command completion (endcmd), releases lock (rmlock), and sends status.
+ */
 static void handle_modern_connection (int sock_fd, const char* hello_line) {
     char cmd[64] = "";
     char res[256] = "";

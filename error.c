@@ -294,12 +294,3 @@ void connbroken (void) {
     tyl_log_close ();
     exit (TYL_EXIT_IO);
 }
-
-void opensyslog (void) {
-    const CfgGlobal* g = CfgGetGlobal ();
-    int fac = (g && g->log_facility) ? g->log_facility : LOG_DAEMON;
-    int lvl = (g && g->log_level) ? g->log_level : TYL_LOG_WARN;
-    const char* tgt = (g && g->log_target) ? g->log_target : "file";
-    const char* fpath = (g && g->log_file) ? g->log_file : "/var/log/backupd-tyl.log";
-    tyl_log_init (tgt, fpath, lvl, fac);
-}

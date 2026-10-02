@@ -47,7 +47,7 @@ void tyl_log_notice (const char* format, ...);
 void tyl_log_warn (const char* format, ...);
 void tyl_log_err (const char* format, ...);
 
-/* Legacy error and warning functions */
+/* Standard error, warning, and exit handlers */
 void warning (const char* format, ...);
 void error (const char* format, ...);
 void errexit (const char* format, ...);
@@ -55,7 +55,6 @@ void errexit_code (int exit_code, const char* format, ...);
 
 void usage (void);
 void connbroken (void);
-void opensyslog (void);
 
 #endif /* ERROR_H */
 

@@ -21,23 +21,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-char* AddPathSep (char* Dir);
-char* DelPathSep (char* Path);
-char* DirCat (char* Path, size_t PathSize, const char* NewElement);
-int IsDir (const char* Path);
+/* Safe string operations */
 char* StrNCopy (char* Dest, const char* Src, size_t Size);
-int IsReadable (const char* Path);
-int IsAbsolute (const char* Path);
-int validfilechar (int c);
+int   validfilechar (int c);
+void  trim_whitespace (char* s);
+int   is_ascii_whitespace (int c);
+int   sanitize_identifier (char* dest, const char* src, size_t max_size);
+int   expand_meta (char* target, const char* src, unsigned size, const char* clientname);
 
-/* Modern safe string and I/O utilities */
-void trim_whitespace (char* s);
-int  is_ascii_whitespace (int c);
-int  sanitize_identifier (char* dest, const char* src, size_t max_size);
-int  expand_meta (char* target, const char* src, unsigned size, const char* clientname);
-
-int  write_all (int fd, const void* buf, size_t len);
-int  read_all (int fd, void* buf, size_t len);
-int  read_line_timeout (int fd, char* buf, size_t max_len, int timeout_sec);
+/* Robust blocking/timeout socket and file descriptor I/O */
+int   write_all (int fd, const void* buf, size_t len);
+int   read_all (int fd, void* buf, size_t len);
+int   read_line_timeout (int fd, char* buf, size_t max_len, int timeout_sec);
 
 #endif /* UTIL_H */

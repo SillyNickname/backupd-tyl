@@ -27,7 +27,6 @@
 #include <sys/wait.h>
 
 #include "const.h"
-#include "check.h"
 #include "global.h"
 #include "config.h"
 #include "error.h"
@@ -63,10 +62,12 @@ static pid_t clientpid = -1;
 
 
 
-static void dodup2 (int fd1, int fd2)
-/* Like dup2, but check if we already have the right file descriptor, close
- * fd1 if successful, and abort on errors.
+/*
+ * dodup2: Safe wrapper around dup2() that avoids self-duplication if fd1 == fd2,
+ * closes the original fd1 upon successful duplication, and aborts with an error
+ * message on any failure.
  */
+static void dodup2 (int fd1, int fd2)
 {
     if (fd1 != fd2) {
 	if (dup2 (fd1, fd2) != fd2) {
@@ -80,8 +81,11 @@ static void dodup2 (int fd1, int fd2)
 
 
 
+/*
+ * connect0: Opens /dev/null and duplicates it onto the specified descriptor fd,
+ * ensuring unused standard streams (stdin, stdout, or stderr) cannot leak or block.
+ */
 static void connect0 (int fd)
-/* Open /dev/null and dup it to the given file descriptor. Abort on errors */
 {
     int fd2 = open (NULLDEV, 0);
     if (fd2 == -1) {
@@ -92,16 +96,27 @@ static void connect0 (int fd)
 
 
 
-void startcmd (const char* cmdline, const char* mode)
-/* Start an external command with the given command line. The child will have
- * it's standard input or ouput connected to clientio.
+/*
+ * startcmd: Spawns an external command string under /bin/sh.
+ *
+ * Execution flow:
+ * 1. Validates arguments: cmdline must be non-null; mode must be "r" (streaming child stdout
+ *    to daemon/network) or "w" (streaming network data into child stdin).
+ * 2. Allocates a unidirectional pipe(fd).
+ * 3. Forks a child worker:
+ *    - In parent: closes child end of pipe and wraps the parent end in a buffered FILE* stream.
+ *    - In child: connects child pipe end to STDIN or STDOUT, redirects the opposite stream
+ *      and STDERR to /dev/null, closes all file descriptors >= 3 to prevent file/socket descriptor
+ *      leakage into child commands, and replaces the process image via execl(SHELL).
  */
+void startcmd (const char* cmdline, const char* mode)
 {
     int fd [2];
 
     /* Check the given arguments */
-    PRECONDITION (cmdline != 0);
-    PRECONDITION (mode && (mode [0] == 'r' || mode [0] == 'w') && mode [1] == '\0');
+    if (!cmdline || !mode || (mode[0] != 'r' && mode[0] != 'w') || mode[1] != '\0') {
+        errexit ("Invalid argument to startcmd");
+    }
 
     /* Create a pipe */
     if (pipe (fd) != 0) {
@@ -189,6 +204,11 @@ void startcmd (const char* cmdline, const char* mode)
 
 
 
+/*
+ * endcmd: Flushes and closes the stream pipe to the child process and awaits
+ * process termination via waitpid(). Returns the process exit status (0 on success,
+ * or 128 + signal number if terminated by an unhandled signal).
+ */
 int endcmd (void) {
     int stat = 0;
     if (clientio) {

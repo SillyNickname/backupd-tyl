@@ -72,7 +72,7 @@ CRYPTO_OBJS = crypto/sha256.o           \
 
 COMMON_OBJS = util.o
 
-SERVER_OBJS = backupd.o check.o client.o config.o error.o extcmd.o global.o sig.o $(COMMON_OBJS) $(CRYPTO_OBJS)
+SERVER_OBJS = backupd.o client.o config.o error.o extcmd.o global.o $(COMMON_OBJS) $(CRYPTO_OBJS)
 CLIENT_OBJS = backupc.o $(COMMON_OBJS) $(CRYPTO_OBJS)
 
 .PHONY: all clean strip install install-systemd test static

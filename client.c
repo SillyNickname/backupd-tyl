@@ -76,7 +76,11 @@ void getclient_from_sock (int fd) {
         }
     }
 
-    /* Strictly sanitize clientname against reverse DNS shell injection: only allow alphanumeric, '-', '_', '.' */
+    /*
+     * Security: Strictly sanitize clientname against reverse DNS shell injection.
+     * When backup commands expand meta-tokens (\h or \H), any characters outside
+     * [a-zA-Z0-9._-] could otherwise cause shell metacharacter injection.
+     */
     char* c = clientname;
     while (*c) {
         if (!validfilechar ((unsigned char)*c)) {
@@ -86,10 +90,18 @@ void getclient_from_sock (int fd) {
     }
 }
 
-void getclient (void) {
-    getclient_from_sock (fileno(stdin));
-}
-
+/*
+ * clientaccess: Evaluates access permission for the current client against
+ * the configured Access Control Lists.
+ *
+ * Rules:
+ * 1. If a specific resource is requested, its local Allow/Deny settings override
+ *    the global settings.
+ * 2. If a setting (Allow or Deny) is not specified at the resource level, the
+ *    global setting is inherited as fallback.
+ * 3. If no resource is requested (e.g. LIST command), the global ACL is evaluated.
+ * 4. Within check_client_acl(), Allow takes precedence over Deny.
+ */
 int clientaccess (const char* res) {
     const CfgGlobal* g = CfgGetGlobal ();
     const CfgSection* s = (res && res[0] != '\0') ? CfgGetSection (res) : NULL;
@@ -98,17 +110,18 @@ int clientaccess (const char* res) {
         return NO;
     }
 
-    /*
-     * Resource Allow and Deny lists override the Global lists.
-     * If a list is not specified at the resource level, the Global list is used.
-     * If res is NULL or empty (e.g. LIST command check), global Allow/Deny applies.
-     */
     const char* eff_allow = (s && s->allow) ? s->allow : (g ? g->allow : NULL);
     const char* eff_deny  = (s && s->deny)  ? s->deny  : (g ? g->deny  : NULL);
 
     return check_client_acl (eff_allow, eff_deny, clientname, clientaddr);
 }
 
+/*
+ * client_check_auth: Validates the client password.
+ * Checks resource-specific password first; if not set, falls back to global password.
+ * If neither is set, access is unauthenticated (allowed).
+ * If password is required, uses constant-time comparison to prevent timing leaks.
+ */
 int client_check_auth (const char* res, const char* provided_password) {
     const CfgSection* s = res ? CfgGetSection (res) : NULL;
     const char* expected = NULL;

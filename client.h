@@ -22,12 +22,16 @@
 extern unsigned long clientaddr;
 extern char          clientname [1024];
 
-void getclient (void);
+/* Resolves remote peer IP and reverse DNS hostname (if nodns=0) */
 void getclient_from_sock (int fd);
 
+/* Evaluates resource-level and global-level ACLs (Allow/Deny) */
 int  clientaccess (const char* res);
+
+/* Validates client authentication password (resource-specific or global fallback) */
 int  client_check_auth (const char* res, const char* provided_password);
 
+/* Protocol response formatting helpers */
 void answer (const char* format, ...) __attribute__((format(printf, 1, 2)));
 void okanswer (void);
 void erranswer (const char* msg, ...) __attribute__((format(printf, 1, 2)));
