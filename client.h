@@ -25,7 +25,7 @@ extern char          clientname [1024];
 void getclient (void);
 void getclient_from_sock (int fd);
 
-int  clientaccess (const char* res, const char* allow, const char* deny);
+int  clientaccess (const char* res);
 int  client_check_auth (const char* res, const char* provided_password);
 
 void answer (const char* format, ...) __attribute__((format(printf, 1, 2)));

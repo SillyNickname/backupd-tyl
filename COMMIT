@@ -23,7 +23,7 @@ Key capabilities:
   * Pre-cryptographic shared password authentication per resource to eliminate
     CPU exhaustion DoS attacks on asymmetric mathematical operations.
   * Multi-line command pipelines via backslash continuation and '{ ... }' blocks.
-  * Local ListAllow and ListDeny per resource overriding global ACLs.
+  * Unified Allow and Deny ACL model with per-resource inheritance and overrides.
   * Standalone TCP daemon (port 12153), foreground supervisor, and inetd modes.
   * Comprehensive logging subsystem (file, syslog/rsyslog, stderr) with SIGHUP reload.
 - Client Observability & Control:

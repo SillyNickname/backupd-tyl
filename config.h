@@ -32,10 +32,8 @@ typedef struct CfgSection {
     char* lockfile;
     long  umask_val;
     int   has_umask;
-    char* allow;
-    char* deny;
-    char* list_allow;           /* Local ListAllow overriding global */
-    char* list_deny;            /* Local ListDeny overriding global */
+    char* allow;                /* Local Allow overriding global */
+    char* deny;                 /* Local Deny overriding global */
     struct CfgSection* next;
 } CfgSection;
 
@@ -52,8 +50,6 @@ typedef struct {
     char* password;             /* Global fallback password */
     char* allow;                /* Global fallback Allow */
     char* deny;                 /* Global fallback Deny */
-    char* list_allow;           /* Global ListAllow */
-    char* list_deny;            /* Global ListDeny */
     char* pid_file;
 } CfgGlobal;
 
@@ -63,7 +59,7 @@ const CfgSection* CfgGetSection (const char* section);
 const CfgSection* CfgGetFirstSection (void);
 int               CfgHaveSection (const char* section);
 
-/* Section listing considering local and global ListAllow/ListDeny */
+/* Section listing considering resource Allow/Deny with global inheritance */
 unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsigned long client_addr);
 
 /* Legacy helper functions for backward compatibility */

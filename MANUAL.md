@@ -110,7 +110,7 @@ The core philosophy of `backupd` is rooted in the Unix philosophy: **do one thin
 | **Client Throughput** | None | Network throughput monitoring (`-T` / `--throughput`), silent by default, live & summary rate in MB/s |
 | **Exit Codes** | Generic 0 or 1 | Standard exit codes (0 to 9) allowing bash scripts to differentiate network, auth, crypto, and resource errors |
 | **Configuration Parsing** | Single-line shell command per resource | Multi-line pipelines (`\`), block brace syntax (`{ ... }`), and sequential lines |
-| **Access Control Lists** | Global `ListAllow` / `ListDeny` only | Local `ListAllow` / `ListDeny` per resource overriding global rules, enabling hidden administrative targets |
+| **Access Control Lists** | Global `ListAllow` / `ListDeny` only | Unified `Allow` and `Deny` ACL model with per-resource inheritance and overrides |
 | **Daemon Operation** | `inetd` only | Standalone background service (`-d`), systemd supervisor (`-F`), or socket activation / `inetd` (`-i`) |
 | **Portability & Footprint** | 32-bit Linux / libc5 | Dual-engine: Hardware-accelerated OpenSSL EVP (package-managed) or 100% self-contained pure-C fallback (< 110KB binary) |
 | **Legacy Compatibility** | Original protocol | Full backward compatibility via client switch (`-L` / `--legacy`) and server flag (`AllowLegacy = yes`) |
@@ -450,7 +450,7 @@ Both `backupc` and `backupd` define standard exit codes so orchestration scripts
 | **1** | `TYL_EXIT_USAGE` | Invalid command-line arguments, missing parameters, or help requested. | Check script syntax or arguments passed to CLI. |
 | **2** | `TYL_EXIT_CONFIG` | Configuration file syntax error or required directive missing. | Validate `/etc/backupd-tyl/backupd.conf`. |
 | **3** | `TYL_EXIT_NETWORK` | Connection refused, host unreachable, DNS resolution error, or socket timeout. | Verify server daemon is running, network routing, and firewall port 12153. |
-| **4** | `TYL_EXIT_AUTH` | Missing or incorrect shared password, or client IP rejected by `ListAllow` / `ListDeny`. | Verify `-P <password>` and client IP against server ACLs. |
+| **4** | `TYL_EXIT_AUTH` | Missing or incorrect shared password, or client IP rejected by `Allow` / `Deny`. | Verify `-P <password>` and client IP against server ACLs. |
 | **5** | `TYL_EXIT_CRYPTO` | Ephemeral key exchange failed, AEAD tag verification failure (tampered ciphertext), or cipher mismatch. | Inspect network security for MITM tampering or bad cipher negotiation. |
 | **6** | `TYL_EXIT_IO` | Local pipe broken, disk full, subcmd failed, or stdin/stdout write failure. | Check local filesystem free space and subprocess errors. |
 | **7** | `TYL_EXIT_RESOURCE` | Target resource section does not exist in `backupd.conf` or lockfile held by another backup. | Check resource name or retry once current lock clears. |
@@ -566,10 +566,6 @@ NoDNS = 1
 # If an Allow or Deny rule is omitted on a resource, the Global rule is inherited.
 Allow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
 Deny  = "*"
-
-# Global access list for the 'LIST' discovery command
-ListAllow = "127.0.0.1/32 192.168.1.0/24"
-ListDeny  = "*"
 ```
 
 ### Resource Definitions
@@ -601,10 +597,6 @@ read     = "cat /var/backups/target.dat"
 # If omitted, the Global rule is used. For example, to exclude 10.10.0.0/16 while
 # inheriting Global Allow: 10.0.0.0/8:
 Deny      = "10.10.0.0/16"
-
-# Discovery list visibility specific to this resource (overrides Global ListAllow/ListDeny)
-ListAllow = "192.168.1.0/24"
-ListDeny  = "*"
 ```
 
 ### Multi-line Scripts
@@ -646,15 +638,21 @@ Access lists support:
 - Hostnames or DNS wildcards: `*.local`, `host.domain.com`
 - Universal wildcard: `*`
 
-#### Local Override Rule:
-If a resource section contains `ListAllow` or `ListDeny`, it completely overrides the global list. This allows hiding specific sensitive resources from `backupc -l` discovery:
+#### Resource Inheritance & Override Rules:
+A single global `Allow` and `Deny` filter controls client authorization and discovery. Resource-level `Allow` and `Deny` directives override the global rules:
+- If a resource defines `Allow`, it replaces the global `Allow`.
+- If a resource defines `Deny`, it replaces the global `Deny`.
+- If a resource omits either directive, the corresponding global directive is inherited automatically.
 
+For example, to inherit a global `Allow = "10.0.0.0/8"` but restrict access on a resource by denying `10.10.0.0/16`:
 ```ini
-[admin-secret]
+[admin-resource]
 password = "AdminSuperSecret"
-ListDeny = "*"
+Deny     = "10.10.0.0/16"
 read     = "/usr/local/sbin/get-system-state"
 ```
+
+Resources that a client is denied access to are automatically hidden from discovery in `backupc -l`.
 
 ### String Macros and Expansions
 
@@ -700,8 +698,8 @@ group     = "backup"
 password  = "SecretClusterKey2026"
 write     = "zstd -T0 -3 > /var/backups/hosts/%h/%H-%d.tar.zst"
 read      = "zstd -d -c /var/backups/hosts/%h/latest.tar.zst"
-ListAllow = "192.168.1.0/24"
-ListDeny  = "*"
+Allow     = "192.168.1.0/24"
+Deny      = "*"
 ```
 
 **Client Command:**
@@ -720,8 +718,8 @@ user      = "postgres"
 password  = "PgSqlSecretVault2026"
 write     = "zstd -d | pg_restore --clean --if-exists -d production"
 read      = "pg_dump -Fc production | zstd -T0 -4"
-ListAllow = "10.0.1.50/32"
-ListDeny  = "*"
+Allow     = "10.0.1.50/32"
+Deny      = "*"
 ```
 
 **Client Command (ChaCha20-Poly1305 High Security Mode):**
@@ -749,7 +747,8 @@ lockfile  = "/var/lock/backupd-lto.lock"
 password  = "OffsiteTapeKey2026"
 write     = "dd of=/dev/nst0 bs=256k status=progress"
 read      = "dd if=/dev/nst0 bs=256k status=progress"
-ListAllow = "10.0.0.0/8"
+Allow     = "10.0.0.0/8"
+Deny      = "*"
 ```
 
 ### Scenario 5: Automated Unattended Cron Jobs
@@ -828,7 +827,7 @@ make clean && make USE_SYSTEM_CRYPTO=0 test
 This runs both unit cryptographic tests against NIST SP 800-38D / RFC 8439 test vectors and full integration loopback tests verifying all 6 AEAD ciphers (ASCON, Speck, ChaCha20, XChaCha20, AES-256-GCM, AES-128-GCM), shared passwords, multi-line commands, logging, throughput tracking, and exit codes.
 
 ### Q: The server returns exit code 4 (`TYL_EXIT_AUTH`)
-The server resource has a `password = "..."` directive configured, but the client did not provide `-P <password>` (or provided an incorrect password), or the client IP is blocked by `ListAllow` / `ListDeny`. Provide the matching password on the client CLI or check the server ACLs.
+The server resource has a `password = "..."` directive configured, but the client did not provide `-P <password>` (or provided an incorrect password), or the client IP is blocked by `Allow` / `Deny`. Provide the matching password on the client CLI or check the server ACLs.
 
 ### Q: How can I see debug logs?
 On the server, run with `-L debug`:

@@ -37,7 +37,6 @@ BindAddress = "127.0.0.1"
 AllowLegacy = yes
 Allow = "127.0.0.0/8"
 Deny = "192.168.254.0/24"
-ListAllow = "127.0.0.1/32 localhost"
 PidFile = "$PID_FILE"
 LogTarget = file
 LogFile = "$LOG_FILE"
@@ -58,7 +57,7 @@ write = "sed 's/foo/bar/g' | \\
 read = "cat $TMP_DIR/multiline.dat"
 
 [test-hidden]
-ListDeny = "127.0.0.1/32 localhost *"
+Deny = "127.0.0.1/32 localhost *"
 read = "echo hidden"
 
 [test-legacy]
@@ -108,12 +107,12 @@ echo "$LIST_OUT" | grep -q "test-stream"
 echo "$LIST_OUT" | grep -q "test-auth"
 echo "$LIST_OUT" | grep -q "test-multiline"
 echo "$LIST_OUT" | grep -q "test-legacy"
-# test-hidden MUST NOT be listed due to local ListDeny
+# test-hidden MUST NOT be listed due to local Deny override
 if echo "$LIST_OUT" | grep -q "test-hidden"; then
-    echo "FAILED: test-hidden was listed but should have been blocked by local ListDeny!"
+    echo "FAILED: test-hidden was listed but should have been blocked by local Deny override!"
     exit 1
 fi
-echo "   [PASS] LIST command with local ListDeny override"
+echo "   [PASS] LIST command with local Deny override"
 
 # 3. Test Modern Data Transfer with ASCON-128a (default lightweight cipher)
 echo "3. Testing data transfer with ASCON-128a..."

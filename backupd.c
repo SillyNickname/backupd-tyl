@@ -285,13 +285,13 @@ static void handle_modern_connection (int sock_fd, const char* hello_line) {
             dprintf (sock_fd, "ERROR: Unknown resource: %s\n", res);
             exit (TYL_EXIT_RESOURCE);
         }
-        if (clientaccess (res, "allow", "deny") == NO) {
+        if (clientaccess (res) == NO) {
             tyl_log_warn ("Access denied for client %s to resource \"%s\"", clientname, res);
             dprintf (sock_fd, "ERROR: Access denied\n");
             exit (TYL_EXIT_AUTH);
         }
     } else if (strcasecmp (cmd, CMD_LIST) == 0) {
-        if (clientaccess (NULL, "listallow", "listdeny") == NO) {
+        if (clientaccess (NULL) == NO) {
             tyl_log_warn ("LIST access denied for client %s", clientname);
             dprintf (sock_fd, "ERROR: Access denied\n");
             exit (TYL_EXIT_AUTH);
@@ -534,7 +534,7 @@ static void handle_legacy_connection (int sock_fd, const char* initial_line) {
                 erranswer ("Configuration error");
                 continue;
             }
-            if (clientaccess (res, "allow", "deny") == NO) {
+            if (clientaccess (res) == NO) {
                 erranswer ("Access denied");
                 continue;
             }
@@ -576,7 +576,7 @@ static void handle_legacy_connection (int sock_fd, const char* initial_line) {
                 erranswer ("Configuration error");
                 continue;
             }
-            if (clientaccess (res, "allow", "deny") == NO) {
+            if (clientaccess (res) == NO) {
                 erranswer ("Access denied");
                 continue;
             }
@@ -608,7 +608,7 @@ static void handle_legacy_connection (int sock_fd, const char* initial_line) {
             else erranswer ("External command exited with code %d", rc);
 
         } else if (strncmp (cmd, CMD_LIST, strlen (CMD_LIST)) == 0) {
-            if (clientaccess (NULL, "listallow", "listdeny") == NO) {
+            if (clientaccess (NULL) == NO) {
                 erranswer ("Access denied");
             } else {
                 CfgListSectionsForClient (stdout, clientname, clientaddr);

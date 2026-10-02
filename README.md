@@ -42,7 +42,7 @@ Based on the original 1998 `backupd` software by **Ullrich von Bassewitz**, requ
   - Standardized exit codes (0 to 9) allowing orchestration scripts to differentiate network, authentication, crypto, and resource errors.
 - **Modern Configuration Engine**:
   - Multi-line pipelines with backslash `\`, curly brace blocks `{ ... }`, and sequential lines.
-  - Local `ListAllow` and `ListDeny` overriding global ACLs, enabling hidden administrative resources.
+  - Unified `Allow` and `Deny` ACL model with per-resource inheritance and overrides.
 - **Standalone Service Daemon**:
   - Runs natively as a standalone service listening on TCP port 12153, foreground systemd supervisor, or traditional `inetd`/socket activation.
   - Full distribution packages and installation scripts for Ubuntu/Debian, RHEL/CentOS/Fedora/Rocky/Alma, Arch, Alpine, and openSUSE.
@@ -161,8 +161,8 @@ user      = "backup"
 password  = "SecretVaultKey42"
 write     = "zstd -T0 -3 > /var/backups/hosts/%h/%H-%d.tar.zst"
 read      = "zstd -d -c /var/backups/hosts/%h/latest.tar.zst"
-ListAllow = "192.168.1.0/24"
-ListDeny  = "*"
+Allow     = "192.168.1.0/24"
+Deny      = "*"
 ```
 
 # Validate configuration file syntax and view resources:

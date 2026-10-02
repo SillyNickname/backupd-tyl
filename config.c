@@ -44,8 +44,6 @@ static void free_section (CfgSection* s) {
     free (s->lockfile);
     free (s->allow);
     free (s->deny);
-    free (s->list_allow);
-    free (s->list_deny);
     free (s);
 }
 
@@ -63,8 +61,6 @@ void CfgDone (void) {
     free (global_cfg.password);
     free (global_cfg.allow);
     free (global_cfg.deny);
-    free (global_cfg.list_allow);
-    free (global_cfg.list_deny);
     free (global_cfg.pid_file);
     free (global_cfg.log_target);
     free (global_cfg.log_file);
@@ -217,21 +213,12 @@ unsigned long CfgListSectionsForClient (FILE* F, const char* client_name, unsign
 
     while (s) {
         /*
-         * Effective Allow for listing: local list_allow -> global list_allow -> local allow -> global allow
-         * Effective Deny for listing:  local list_deny  -> global list_deny  -> (if list_allow specified, NULL; else local deny -> global deny)
+         * Effective Allow and Deny for listing:
+         * Resource-level Allow and Deny override Global lists.
+         * If not specified at resource level, the Global list is used.
          */
-        const char* eff_allow = NULL;
-        if (s->list_allow)              eff_allow = s->list_allow;
-        else if (global_cfg.list_allow) eff_allow = global_cfg.list_allow;
-        else if (s->allow)              eff_allow = s->allow;
-        else if (global_cfg.allow)      eff_allow = global_cfg.allow;
-
-        const char* eff_deny = NULL;
-        if (s->list_deny)               eff_deny = s->list_deny;
-        else if (global_cfg.list_deny)  eff_deny = global_cfg.list_deny;
-        else if (s->list_allow || global_cfg.list_allow) eff_deny = NULL;
-        else if (s->deny)               eff_deny = s->deny;
-        else if (global_cfg.deny)       eff_deny = global_cfg.deny;
+        const char* eff_allow = s->allow ? s->allow : global_cfg.allow;
+        const char* eff_deny  = s->deny  ? s->deny  : global_cfg.deny;
 
         int allowed = YES;
         if (eff_allow && !host_in_list (eff_allow, client_name, client_addr)) {
@@ -390,12 +377,6 @@ int CfgInit (void) {
             } else if (strcasecmp (key, "deny") == 0) {
                 free (global_cfg.deny);
                 global_cfg.deny = strdup (clean_val);
-            } else if (strcasecmp (key, "listallow") == 0 || strcasecmp (key, "list_allow") == 0) {
-                free (global_cfg.list_allow);
-                global_cfg.list_allow = strdup (clean_val);
-            } else if (strcasecmp (key, "listdeny") == 0 || strcasecmp (key, "list_deny") == 0) {
-                free (global_cfg.list_deny);
-                global_cfg.list_deny = strdup (clean_val);
             } else if (strcasecmp (key, "pidfile") == 0 || strcasecmp (key, "pid_file") == 0) {
                 free (global_cfg.pid_file);
                 global_cfg.pid_file = strdup (clean_val);
@@ -427,12 +408,6 @@ int CfgInit (void) {
             } else if (strcasecmp (key, "deny") == 0) {
                 free (current_sec->deny);
                 current_sec->deny = strdup (clean_val);
-            } else if (strcasecmp (key, "listallow") == 0) {
-                free (current_sec->list_allow);
-                current_sec->list_allow = strdup (clean_val);
-            } else if (strcasecmp (key, "listdeny") == 0) {
-                free (current_sec->list_deny);
-                current_sec->list_deny = strdup (clean_val);
             }
         }
     }
@@ -480,12 +455,6 @@ int CfgGetStr (const char* Section, const char* Entry, const char* DefVal, char*
         } else if (strcasecmp (Entry, "deny") == 0 && global_cfg.deny) {
             StrNCopy (Str, global_cfg.deny, StrSize);
             return SUCCESS;
-        } else if (strcasecmp (Entry, "listallow") == 0 && global_cfg.list_allow) {
-            StrNCopy (Str, global_cfg.list_allow, StrSize);
-            return SUCCESS;
-        } else if (strcasecmp (Entry, "listdeny") == 0 && global_cfg.list_deny) {
-            StrNCopy (Str, global_cfg.list_deny, StrSize);
-            return SUCCESS;
         } else if (strcasecmp (Entry, "password") == 0 && global_cfg.password) {
             StrNCopy (Str, global_cfg.password, StrSize);
             return SUCCESS;
@@ -500,10 +469,8 @@ int CfgGetStr (const char* Section, const char* Entry, const char* DefVal, char*
             else if (strcasecmp (Entry, "write") == 0) val = s->write_cmd;
             else if (strcasecmp (Entry, "read") == 0) val = s->read_cmd;
             else if (strcasecmp (Entry, "lockfile") == 0) val = s->lockfile;
-            else if (strcasecmp (Entry, "allow") == 0) val = s->allow;
-            else if (strcasecmp (Entry, "deny") == 0) val = s->deny;
-            else if (strcasecmp (Entry, "listallow") == 0) val = s->list_allow ? s->list_allow : global_cfg.list_allow;
-            else if (strcasecmp (Entry, "listdeny") == 0) val = s->list_deny ? s->list_deny : global_cfg.list_deny;
+            else if (strcasecmp (Entry, "allow") == 0) val = s->allow ? s->allow : global_cfg.allow;
+            else if (strcasecmp (Entry, "deny") == 0) val = s->deny ? s->deny : global_cfg.deny;
 
             if (val) {
                 StrNCopy (Str, val, StrSize);

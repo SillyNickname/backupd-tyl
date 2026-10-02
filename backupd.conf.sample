@@ -68,10 +68,6 @@ AllowLegacy = no
 Allow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
 Deny  = "*"
 
-# Global access list for the 'LIST' command (resources can override with local ListAllow/ListDeny):
-ListAllow = "127.0.0.1/32 192.168.1.0/24 10.0.0.0/8"
-ListDeny  = "*"
-
 
 # -------------------------------------------------------------------------
 # RESOURCE DEFINITIONS
@@ -87,8 +83,8 @@ lockfile = "/var/lock/backupd-system-archive.lock"
 password = "ChangeThisToAStrongSharedSecret!"
 write    = "zstd -T0 -3 > /var/backups/hosts/%h/%H-%d.tar.zst"
 read     = "zstd -d -c /var/backups/hosts/%h/latest.tar.zst"
-ListAllow = "192.168.1.0/24"
-ListDeny  = "*"
+Allow    = "192.168.1.0/24"
+Deny     = "*"
 
 # 2. Multi-line Command Script with Pipeline Processing
 # Demonstrates backslash line continuation and Unix pipelines.
@@ -100,8 +96,8 @@ write    = "zstd -d | \
             pg_restore --clean --if-exists -d production_db"
 read     = "pg_dump -Fc production_db | \
             zstd -T0 -4"
-ListAllow = "10.0.0.0/8 127.0.0.1/32"
-ListDeny  = "*"
+Allow    = "10.0.0.0/8 127.0.0.1/32"
+Deny     = "*"
 
 # 3. Block-script syntax for multi-step tasks
 # Multi-line commands can also be grouped inside curly brace blocks.
@@ -117,11 +113,12 @@ write    = {
 read     = "cat /var/backups/checksums.log"
 
 # 4. Hidden Administrative Resource
-# Using local ListDeny to hide this resource from discovery in 'backupc -l',
-# while keeping it directly accessible by authorized hosts with password.
+# Using local Deny to restrict execution and hide this resource from 'backupc -l' discovery,
+# except for authorized administrative machines.
 [admin-maintenance]
 password  = "SuperSecretAdminKey"
-ListDeny  = "*"
+Allow     = "127.0.0.1/32"
+Deny      = "*"
 write     = "/usr/local/sbin/backup-maintenance-hook"
 read      = "/bin/uptime"
 
@@ -131,5 +128,5 @@ lockfile = "/var/lock/backupd-tape0.lock"
 write    = "dd of=/dev/nst0 bs=256k"
 read     = "dd if=/dev/nst0 bs=256k"
 password = "TapeVaultAccessKey"
-ListAllow = "10.10.10.0/24"
-ListDeny  = "*"
+Allow    = "10.10.10.0/24"
+Deny     = "*"

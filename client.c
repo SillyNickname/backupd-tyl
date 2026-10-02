@@ -92,36 +92,21 @@ void getclient (void) {
 
 extern int host_in_list (const char* list_str, const char* client_name, unsigned long client_addr);
 
-int clientaccess (const char* res, const char* allow, const char* deny) {
+int clientaccess (const char* res) {
     const CfgGlobal* g = CfgGetGlobal ();
-    (void)allow; (void)deny;
+    const CfgSection* s = (res && res[0] != '\0') ? CfgGetSection (res) : NULL;
 
-    if (!res || res[0] == '\0') {
-        /* Listing command: check ListAllow / ListDeny, fallback to global Allow / Deny */
-        const char* eff_allow = g->list_allow ? g->list_allow : g->allow;
-        const char* eff_deny  = g->list_deny  ? g->list_deny  : (g->list_allow ? NULL : g->deny);
-
-        if (eff_allow && !host_in_list (eff_allow, clientname, clientaddr)) {
-            return NO;
-        }
-        if (eff_deny && host_in_list (eff_deny, clientname, clientaddr)) {
-            return NO;
-        }
-        return YES;
+    if (res && res[0] != '\0' && !s) {
+        return NO;
     }
-
-    const CfgSection* s = CfgGetSection (res);
-    if (!s) return NO;
 
     /*
      * Resource Allow and Deny lists override the Global lists.
      * If a list is not specified at the resource level, the Global list is used.
-     * Fallback chain:
-     * - Allow: s->allow -> g->allow -> g->list_allow
-     * - Deny:  s->deny  -> g->deny  -> (if g->allow ? NULL : g->list_deny)
+     * If res is NULL or empty (e.g. LIST command check), global Allow/Deny applies.
      */
-    const char* eff_allow = s->allow ? s->allow : (g->allow ? g->allow : g->list_allow);
-    const char* eff_deny  = s->deny  ? s->deny  : (g->deny  ? g->deny  : (g->allow ? NULL : g->list_deny));
+    const char* eff_allow = (s && s->allow) ? s->allow : (g ? g->allow : NULL);
+    const char* eff_deny  = (s && s->deny)  ? s->deny  : (g ? g->deny  : NULL);
 
     if (eff_allow && !host_in_list (eff_allow, clientname, clientaddr)) {
         return NO;
